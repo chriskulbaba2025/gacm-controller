@@ -1,0 +1,42 @@
+node_modules/
+.env*
+!.env.example
+runtime/
+logs/
+railway-n8n/vars.json
+
+# Local credentials, certificates, and secret material
+*.secret
+*.credentials
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+credentials/
+
+# Databases, journals, runtime state, and process artifacts
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+*.wal
+*.shm
+*.pid
+*.lock
+*.log
+
+# Generated output and local caches
+dist/
+build/
+coverage/
+.cache/
+.tmp/
+tmp/
+*.tsbuildinfo
+
+# Machine/editor metadata
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

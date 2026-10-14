@@ -1,0 +1,31 @@
+{
+  "name": "prysm-gacm-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "selftest": "tsx src/selftest.ts",
+    "gacm:authority:selftest": "tsx src/gacm-authority-selftest.ts",
+    "workspace:selftest": "tsx src/workspace-bootstrap-selftest.ts",
+    "workspace:resolve": "tsx src/manual-workspace.ts",
+    "telegram": "tsx src/telegram-main.ts",
+    "telegram:selftest": "tsx src/telegram-selftest.ts",
+    "telegram:locktest": "tsx src/telegram-lock-selftest.ts",
+    "result:selftest": "tsx src/result-selftest.ts",
+    "telegram:validate": "tsx src/telegram-validate.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "^2.3.0",
+    "dotenv": "^18.0.5",
+    "pg": "^8.23.1",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "^2.3.0",
+    "@types/node": "^26.6.4",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}
