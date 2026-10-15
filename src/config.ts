@@ -45,24 +45,24 @@ export const GACM_REPOSITORIES: Record<GacmRepositoryRole, GacmRepositoryConfig>
 export const PROJECTS: Record<ProjectKey, ProjectConfig> = {
   prysm: {
     key: "prysm",
-    root: "C:\\Users\\kulba\\Desktop\\prysm-staging-isolated",
+    root: "C:\\g\\p001",
     expectedRemote: "https://github.com/chriskulbaba2025/prysm-staging-isolated.git",
     proofRoot: "C:\\Users\\kulba\\Downloads\\PRYSM-MCP-RUNS",
-    executionRoot: "C:\\Users\\kulba\\Downloads\\PRYSM-MCP-EXECUTION-WORKSPACES"
+    executionRoot: "C:\\g\\p"
   },
   gacm: {
     key: "gacm",
     root: "C:\\Users\\kulba\\Desktop\\gacm-trial",
     expectedRemote: "https://github.com/chriskulbaba2025/gacm-trial.git",
     proofRoot: "C:\\Users\\kulba\\Downloads\\GACM-MCP-RUNS",
-    executionRoot: "C:\\Users\\kulba\\Downloads\\GACM-MCP-EXECUTION-WORKSPACES"
+    executionRoot: "C:\\g\\g"
   },
   sandbox: {
     key: "sandbox",
     root: "C:\\Users\\kulba\\Desktop\\telegram-control-sandbox",
     expectedRemote: "https://github.com/chriskulbaba2025/telegram-control-sandbox.git",
     proofRoot: "C:\\Users\\kulba\\Downloads\\TELEGRAM-CONTROL-SANDBOX-RUNS",
-    executionRoot: "C:\\Users\\kulba\\Downloads\\TELEGRAM-CONTROL-SANDBOX-EXECUTION-WORKSPACES"
+    executionRoot: "C:\\g\\s"
   }
 };
 
