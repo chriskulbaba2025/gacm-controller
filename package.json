@@ -7,6 +7,7 @@
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
     "prysm:browser-guard:selftest": "tsx src/prysm-browser-guard-selftest.ts",
+    "prysm:authority:selftest": "tsx src/prysm-authority-selftest.ts",
     "selftest": "tsx src/selftest.ts",
     "gacm:authority:selftest": "tsx src/gacm-authority-selftest.ts",
     "workspace:selftest": "tsx src/workspace-bootstrap-selftest.ts",

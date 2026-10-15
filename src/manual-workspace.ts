@@ -64,8 +64,8 @@ async function main(): Promise<void> {
     repositoryRoot = cfg.root;
     repositoryIdentity = cfg.expectedRemote;
     expectedRemote = cfg.expectedRemote;
-    authoritativeRef = status.branch;
-    authoritativeSha = status.sha;
+    authoritativeRef = cfg.authoritativeRef || status.branch;
+    authoritativeSha = cfg.authoritativeSha || status.sha;
     if (!authoritativeRef || !authoritativeSha) throw new Error("Project has no explicit branch and SHA authority.");
   }
 

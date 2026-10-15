@@ -228,6 +228,44 @@ function normalizeRemote(value: string): string {
   return value.trim().replace(/\.git$/i, "").replace(/\/$/, "").toLowerCase();
 }
 
+export function assertPrysmAuthorityStatus(status: Pick<RepoStatus, "remote" | "expectedRemote" | "branch" | "sha" | "dirty">): void {
+  const cfg = projectConfig("prysm");
+  if (normalizeRemote(status.remote) !== normalizeRemote(cfg.expectedRemote)) {
+    throw new Error(`PRYSM authority failure: origin is ${status.remote}, expected ${cfg.expectedRemote}.`);
+  }
+  if (status.dirty) {
+    throw new Error("PRYSM authority failure: authorized checkout is dirty.");
+  }
+  if (status.sha !== cfg.authoritativeSha) {
+    throw new Error(`PRYSM authority failure: SHA ${status.sha} is not authorized SHA ${cfg.authoritativeSha}.`);
+  }
+  const branch = status.branch.trim();
+  if (branch && branch !== cfg.authoritativeRef) {
+    throw new Error(`PRYSM authority failure: ref ${branch} is not authorized ref ${cfg.authoritativeRef}.`);
+  }
+  if (!branch && !cfg.allowDetachedHead) {
+    throw new Error("PRYSM authority failure: detached HEAD is not authorized.");
+  }
+}
+
+async function verifyPrysmAuthorityRef(): Promise<void> {
+  const cfg = projectConfig("prysm");
+  if (!cfg.authoritativeRef || !cfg.authoritativeSha) {
+    throw new Error("PRYSM authority contract is incomplete.");
+  }
+  const [localRef, remoteRef] = await Promise.all([
+    gitAtRoot(cfg.root, ["rev-parse", "--verify", `${cfg.authoritativeRef}^{commit}`]),
+    gitAtRoot(cfg.root, ["ls-remote", "origin", `refs/heads/${cfg.authoritativeRef}`])
+  ]);
+  if (localRef !== cfg.authoritativeSha) {
+    throw new Error(`PRYSM authority failure: local ref ${cfg.authoritativeRef} resolves to ${localRef}.`);
+  }
+  const remoteSha = remoteRef.split(/\s+/)[0] || "";
+  if (remoteSha !== cfg.authoritativeSha) {
+    throw new Error(`PRYSM authority failure: remote ref ${cfg.authoritativeRef} resolves to ${remoteSha}.`);
+  }
+}
+
 async function git(project: ProjectKey, args: string[]): Promise<string> {
   const cfg = projectConfig(project);
   const { stdout } = await execFile("git", ["-C", cfg.root, ...args], {
@@ -324,7 +362,7 @@ export async function getProjectStatus(project: ProjectKey): Promise<RepoStatus>
     throw new Error(`Repo identity failure: origin is ${remote}, expected ${cfg.expectedRemote}.`);
   }
 
-  return {
+  const status: RepoStatus = {
     project,
     root: cfg.root,
     topLevel,
@@ -334,8 +372,15 @@ export async function getProjectStatus(project: ProjectKey): Promise<RepoStatus>
     branch,
     sha,
     dirty: porcelain.length > 0,
-    porcelain
+    porcelain,
+    authoritativeRef: cfg.authoritativeRef,
+    authoritativeSha: cfg.authoritativeSha
   };
+  if (project === "prysm") {
+    assertPrysmAuthorityStatus(status);
+    await verifyPrysmAuthorityRef();
+  }
+  return status;
 }
 
 export async function readProjectFile(
@@ -588,6 +633,11 @@ export async function startCodexRun(
   const proofDir = path.join(cfg.proofRoot, runId);
   await mkdir(proofDir, { recursive: true });
 
+  const projectAuthoritativeRef = cfg.authoritativeRef || sourcePre.branch;
+  const projectAuthoritativeSha = cfg.authoritativeSha || sourcePre.sha;
+  if (!projectAuthoritativeRef || !projectAuthoritativeSha) {
+    throw new Error("Cannot establish a governed workspace without an explicit repository authority.");
+  }
   const workspaceAuthority: WorkspaceAuthority = {
     runId,
     trancheId: tranche,
@@ -595,8 +645,8 @@ export async function startCodexRun(
     repositoryRoot: resolvedRole?.repository.root || sourcePre.root,
     repositoryIdentity: resolvedRole?.repository.expectedRemote || sourcePre.expectedRemote,
     expectedRemote: resolvedRole?.repository.expectedRemote || sourcePre.expectedRemote,
-    authoritativeRef: resolvedRole?.repository.authoritativeRef || sourcePre.branch,
-    authoritativeSha: resolvedRole?.repository.authoritativeSha || sourcePre.sha,
+    authoritativeRef: resolvedRole?.repository.authoritativeRef || projectAuthoritativeRef,
+    authoritativeSha: resolvedRole?.repository.authoritativeSha || projectAuthoritativeSha,
     executionRoot: cfg.executionRoot
   };
   if (!workspaceAuthority.authoritativeRef) {
@@ -855,10 +905,9 @@ export async function validateCodexResume(runId: string): Promise<RunStatus> {
       executionRoot: cfg.executionRoot
     };
   } else {
-    const [branch, sha] = await Promise.all([
-      gitAtRoot(cfg.root, ["branch", "--show-current"]),
-      gitAtRoot(cfg.root, ["rev-parse", "HEAD"])
-    ]);
+    const current = await getProjectStatus(status.project);
+    const branch = current.branch;
+    const sha = current.sha;
     currentAuthority = {
       runId: status.runId,
       trancheId: status.tranche,
@@ -866,8 +915,8 @@ export async function validateCodexResume(runId: string): Promise<RunStatus> {
       repositoryRoot: cfg.root,
       repositoryIdentity: cfg.expectedRemote,
       expectedRemote: cfg.expectedRemote,
-      authoritativeRef: branch,
-      authoritativeSha: sha,
+      authoritativeRef: cfg.authoritativeRef || branch,
+      authoritativeSha: cfg.authoritativeSha || sha,
       executionRoot: cfg.executionRoot
     };
   }
