@@ -4,8 +4,10 @@ import os from "node:os";
 import path from "node:path";
 import {
   reconcileExecutionWorkspace,
+  executionBranchName,
   validatePersistedWorkspaceBinding,
   verifyExecutionWorkspaceForLaunch,
+  workspaceDirectoryName,
   workspaceBindingPath,
   type WorkspaceAuthority,
   type WorkspaceBinding,
@@ -73,15 +75,16 @@ async function seedWorkspace(
   bindingOverrides: Partial<WorkspaceBinding> = {},
   ancestor = true
 ): Promise<string> {
-  const workspace = path.join(auth.executionRoot, auth.runId);
+  const workspace = path.join(auth.executionRoot, workspaceDirectoryName(auth.runId));
+  const executionBranch = executionBranchName(auth.repositoryRole, auth.runId);
   await mkdir(workspace, { recursive: true });
-  git.states.set(workspace, { topLevel: workspace, remote: auth.expectedRemote, commonDir: path.join(auth.repositoryRoot, ".git"), sha, branch: "governed-GACM_APPLICATION-gacm-test-run", porcelain, ancestor });
+  git.states.set(workspace, { topLevel: workspace, remote: auth.expectedRemote, commonDir: path.join(auth.repositoryRoot, ".git"), sha, branch: executionBranch, porcelain, ancestor });
   const binding: WorkspaceBinding = {
     version: 2, runId: auth.runId, trancheId: auth.trancheId, repositoryRole: auth.repositoryRole,
     repositoryRoot: auth.repositoryRoot, expectedRemote: auth.expectedRemote,
     repositoryIdentity: auth.repositoryIdentity,
     authoritativeRef: auth.authoritativeRef, authoritativeSha: auth.authoritativeSha,
-    workspacePath: workspace, executionBranch: "governed-GACM_APPLICATION-gacm-test-run", createdAt: new Date().toISOString(), ...bindingOverrides
+    workspacePath: workspace, executionBranch, createdAt: new Date().toISOString(), ...bindingOverrides
   };
   await writeFile(workspaceBindingPath(workspace), JSON.stringify(binding), "utf8");
   return workspace;
@@ -113,7 +116,7 @@ async function main() {
     const dirtyGit = new FakeGit(source, auth.expectedRemote, auth.authoritativeSha);
     await seedWorkspace(dirtyGit, dirtyAuth, dirtyAuth.authoritativeSha, " M intentional.txt");
     await assert.rejects(() => reconcileExecutionWorkspace(dirtyAuth, dirtyGit.run), /dirty/);
-    assert.equal(dirtyGit.states.get(path.join(dirtyAuth.executionRoot, dirtyAuth.runId))?.porcelain, " M intentional.txt");
+    assert.equal(dirtyGit.states.get(path.join(dirtyAuth.executionRoot, workspaceDirectoryName(dirtyAuth.runId)))?.porcelain, " M intentional.txt");
 
     const dirtySourceAuth = authority(source, path.join(root, "dirty-source"));
     const dirtySourceGit = new FakeGit(source, auth.expectedRemote, auth.authoritativeSha);

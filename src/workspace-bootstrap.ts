@@ -1,5 +1,6 @@
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { createHash } from "node:crypto";
 
 export interface WorkspaceAuthority {
   runId: string;
@@ -56,10 +57,17 @@ function canonicalRepositoryIdentity(remote: string): string {
   return normalizeRemote(remote);
 }
 
-function safeRunLabel(value: string): string {
-  const safe = value.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80);
-  if (!safe) throw new Error("Workspace run identity is empty.");
-  return safe;
+function shortIdentity(prefix: string, value: string): string {
+  if (!value.trim()) throw new Error("Workspace identity is empty.");
+  return `${prefix}-${createHash("sha256").update(value, "utf8").digest("hex").slice(0, 20)}`;
+}
+
+export function workspaceDirectoryName(runId: string): string {
+  return shortIdentity("w", runId);
+}
+
+export function executionBranchName(repositoryRole: string, runId: string): string {
+  return shortIdentity("g", `${repositoryRole}\u0000${runId}`);
 }
 
 function assertBinding(binding: WorkspaceBinding, authority: WorkspaceAuthority, workspacePath: string): void {
@@ -164,7 +172,8 @@ export async function reconcileExecutionWorkspace(
 
   const base = path.resolve(authority.executionRoot);
   await mkdir(base, { recursive: true });
-  let workspacePath = path.join(base, safeRunLabel(authority.runId));
+  const workspaceName = workspaceDirectoryName(authority.runId);
+  let workspacePath = path.join(base, workspaceName);
   let suffix = 1;
   while (await pathExists(workspacePath)) {
     const existingBinding = await readBinding(workspacePath);
@@ -188,10 +197,10 @@ export async function reconcileExecutionWorkspace(
         }
       }
     }
-    workspacePath = path.join(base, `${safeRunLabel(authority.runId)}-${suffix++}`);
+    workspacePath = path.join(base, `${workspaceName}-${suffix++}`);
   }
 
-  const executionBranch = `governed/${safeRunLabel(authority.repositoryRole)}-${safeRunLabel(authority.runId)}`;
+  const executionBranch = executionBranchName(authority.repositoryRole, authority.runId);
   let branch = executionBranch;
   let branchSuffix = 1;
   while (true) {

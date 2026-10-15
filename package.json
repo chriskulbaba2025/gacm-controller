@@ -11,6 +11,7 @@
     "selftest": "tsx src/selftest.ts",
     "gacm:authority:selftest": "tsx src/gacm-authority-selftest.ts",
     "workspace:selftest": "tsx src/workspace-bootstrap-selftest.ts",
+    "workspace:path:selftest": "tsx src/workspace-path-selftest.ts",
     "workspace:resolve": "tsx src/manual-workspace.ts",
     "telegram": "tsx src/telegram-main.ts",
     "telegram:selftest": "tsx src/telegram-selftest.ts",
