@@ -13,6 +13,7 @@ import {
   safeProjectPath,
   type ProjectKey
 } from "./config.js";
+import { assertPrysmBrowserPlanAllowed, prysmBrowserGuardPrompt } from "./prysm-browser-guard.js";
 import {
   GACM_REPOSITORIES,
   type GacmRepositoryRole
@@ -528,6 +529,7 @@ HARD CONSTRAINTS:
 - Write proof to: ${path.join(proofDir, "PROOF.md")}
 - Proof must include pre-run SHA, files changed, tests actually run with results, final SHA, remaining blockers, and whether production was untouched.
 - Never claim PASS, done, staging-ready, production-ready, or release-ready without the required proof.
+${prysmBrowserGuardPrompt(project)}
 
 PRE-RUN:
 branch: ${pre.branch}
@@ -559,6 +561,7 @@ export async function startCodexRun(
   tranche: string,
   gacmRole?: GacmRepositoryRole
 ): Promise<RunStatus> {
+  assertPrysmBrowserPlanAllowed(project, objective);
   if (activeRunId) {
     const current = await getCodexStatus(activeRunId);
     if (current.state === "RUNNING") {
