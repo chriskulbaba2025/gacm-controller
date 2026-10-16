@@ -18,7 +18,7 @@ Purpose: a narrow local MCP for governed PRYSM and GACM updates only.
 
 ## Authorized projects
 
-- PRYSM: `C:\Users\kulba\Desktop\prysm-staging-isolated`
+- PRYSM: GitHub-controller accepted source checkout `C:\g\p001`, remote `chriskulbaba2025/prysm-staging-isolated`, pinned staging ref/SHA above. Existing local running-controller config has **not** yet been reconciled.
 - GACM: `C:\Users\kulba\Desktop\gacm-trial`
 
 The server fail-closes if the Git top-level or `origin` remote does not match the fixed configuration.
@@ -69,14 +69,25 @@ Set this environment variable before starting the MCP:
 
 Completion, failure, and cancellation events are POSTed to that URL. The server reports `NOT_CONFIGURED` rather than guessing a URL.
 
-## Start locally
+## Start locally — current manual commands (single launcher not yet implemented)
+
+**Telegram bot** (only after verifying this local checkout/config against current GitHub and preserving pre-existing dirty changes):
+
+```powershell
+cd C:\Users\kulba\Desktop\prysm-gacm-mcp
+npm run telegram
+```
+
+The Telegram controller uses a single-instance lock on `127.0.0.1:49831`. It is **not yet verified** to auto-check its running code SHA versus GitHub. Leave the live process alone while performing read-only authority diagnosis; any code repair requires a controlled operator restart.
+
+**Local MCP stdio server** (different process, not Telegram polling):
 
 ```powershell
 cd C:\Users\kulba\Desktop\prysm-gacm-mcp
 npm start
 ```
 
-The server uses MCP stdio.
+These are existing manual entrypoints. The requested one-command fail-closed launcher is a planned correction, **not** a completed feature.
 
 ## Verification
 
