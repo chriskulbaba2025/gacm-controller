@@ -1,5 +1,12 @@
 # PRYSM / GACM Governed MCP v0.1
 
+## Released PRYSM staging authority — 2026-10-16
+
+- Latest staging application GitHub branch `repair/prysm-evidence-accuracy-20261013`: `c0460142224fd6f9cfd8262dd8816aa6ccd89ac7`. Existing isolated-staging Vercel stable alias and Railway worker are provider-verified on this SHA; production-prysm untouched. User browser acceptance remains pending.
+- GitHub `src/config.ts` PRYSM SHA advanced to `c0460142224fd6f9cfd8262dd8816aa6ccd89ac7`. This GitHub update **does not update the existing local Telegram executable**. Existing `C:\g\p001` PRYSM checkout and running controller must be reconciled, preserving dirty worktrees and proof, before starting a Telegram run. Controller runtime identity/resume still unverified.
+- Existing controller enforces a single Codex run; it does not independently schedule sequential Codex runs or auto-push/deploy. A long, bounded one-session GACM prompt may handle several internal milestones, but no claim of a fully autonomous release loop is authorized. Never claim a code push or Vercel preview is staging acceptance.
+
+
 ## Current single-staging PRYSM authority (2026-10-16)
 
 **Governing source of truth:** [PRYSM single-staging Telegram/GACM operating decision](https://github.com/chriskulbaba2025/prysm-project-context/blob/main/DECISION_PRYSM_GACM_SINGLE_STAGING_OPERATING_MODEL_2026-10-16.md) and the latest [PRYSM CURRENT_STATE.md](https://github.com/chriskulbaba2025/prysm-project-context/blob/main/CURRENT_STATE.md). Read these and current application/controller GitHub SHAs before any handoff or launch.
