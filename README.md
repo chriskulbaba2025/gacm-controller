@@ -1,5 +1,19 @@
 # PRYSM / GACM Governed MCP v0.1
 
+## Current single-staging PRYSM authority (2026-10-16)
+
+**Governing source of truth:** [PRYSM single-staging Telegram/GACM operating decision](https://github.com/chriskulbaba2025/prysm-project-context/blob/main/DECISION_PRYSM_GACM_SINGLE_STAGING_OPERATING_MODEL_2026-10-16.md) and the latest [PRYSM CURRENT_STATE.md](https://github.com/chriskulbaba2025/prysm-project-context/blob/main/CURRENT_STATE.md). Read these and current application/controller GitHub SHAs before any handoff or launch.
+
+- **Only PRYSM target:** `chriskulbaba2025/prysm-staging-isolated`; staging ref `repair/prysm-evidence-accuracy-20261013` and accepted SHA `0ad1f183d86a0f4b6c066a9ef8f3c96bb8350813` as verified 2026-10-16.
+- **GitHub controller `main` config:** `src/config.ts` expects `C:\g\p001`, the above exact ref/SHA and execution worktrees under `C:\g\p`. This is **source code only**, not proof the running Telegram process has these settings.
+- **Observed local discrepancy:** user-read `C:\Users\kulba\Desktop\prysm-gacm-mcp\src\config.ts` still points at `C:\Users\kulba\Desktop\prysm-staging-isolated` without the newer accepted SHA binding. Telegram has run from that outdated configuration and reported a DIRTY checkout. **Do not run Codex before in-place reconciliation; preserve all existing dirty work.**
+- **Improved harness candidate** `e627fcaba391661a6332eaa21cf99dbbbafb92a5` is user-reported local/unpromoted; its child acceptance remains HOLD. Do not claim it runs live.
+- **Production boundary:** the separate `chriskulbaba2025/production-prysm` project remains untouched. Do not create another staging application or configuration.
+- **Operating goal:** use Telegram as real controller of verified PRYSM staging coding. Maintain durable resume, exact source identity, dependent tests, proof and stage-gated release. At this README version PRYSM/GACM push and deployment from Telegram are explicitly **not** supported; browser/live end-to-end acceptance is **not** established.
+- **Exact current next action:** reconcile the existing local controller's executing code/config and staging checkout **read-only**, then make one minimal, reversible in-place startup correction, verify Telegram status matches GitHub and return to PRYSM's preserved data-accuracy repair. No second controller installation, no new staging, no resets, no production changes.
+
+The legacy background sections below describe historical behavior; this current section and the dated PRYSM governance decision control when conflicting.
+
 Purpose: a narrow local MCP for governed PRYSM and GACM updates only.
 
 ## Authorized projects
