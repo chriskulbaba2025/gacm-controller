@@ -602,6 +602,7 @@ Authorized tranche: ${tranche}
 Objective: ${objective}
 
 HARD CONSTRAINTS:
+- The controller verifies repository and workspace authority before launch. Do not call prysm_gacm MCP inside this noninteractive Codex child; use local authorized workspace tools.
 - Work only inside the exact authorized execution workspace: ${pre.root}
 - Authorized repository root: ${authority && repositoryRole ? authority[repositoryRole === "GACM_GOVERNANCE" ? "governance" : "application"].root : pre.root}
 - Repository role owning this work: ${repositoryRole || "NOT_APPLICABLE"}
@@ -758,6 +759,7 @@ export async function startCodexRun(
     "--sandbox", "workspace-write",
     "-c", 'windows.sandbox="unelevated"',
     "-c", 'approval_policy="never"',
+    "-c", 'mcp_servers.prysm_gacm.enabled=false',
     "-c", "sandbox_workspace_write.network_access=false",
     "--add-dir", proofDir,
     "--output-last-message", finalPath,
