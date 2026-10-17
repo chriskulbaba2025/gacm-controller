@@ -12,6 +12,7 @@ export interface WorkspaceAuthority {
   authoritativeSha: string;
   executionRoot: string;
   isolatedClone?: boolean;
+  existingWorkspaceOnly?: boolean;
 }
 
 export interface WorkspaceBinding {
@@ -113,6 +114,9 @@ async function validateExactWorkspace(
       canonicalRepositoryIdentity(remote) !== canonicalRepositoryIdentity(authority.repositoryIdentity)) {
     throw new Error("Execution workspace remote identity does not match the authorized repository.");
   }
+  if (authority.existingWorkspaceOnly && normalizePath(workspacePath) !== normalizePath(authority.repositoryRoot)) {
+    throw new Error("PRYSM must execute only in its one existing authorized staging checkout.");
+  }
   if (isIsolatedClone(authority)) {
     if (normalizePath(commonDir) !== normalizePath(path.join(workspacePath, ".git"))) {
       throw new Error("PRYSM execution workspace is not an independent Git clone.");
@@ -170,11 +174,46 @@ export async function reconcileExecutionWorkspace(
   try {
     await git(authority.repositoryRoot, ["cat-file", "-e", `${authority.authoritativeSha}^{commit}`]);
   } catch {
+    if (authority.existingWorkspaceOnly) {
+      throw new Error("Accepted PRYSM SHA is unavailable locally; no implicit fetch or new workspace is permitted.");
+    }
     await git(authority.repositoryRoot, [
       "fetch", "--no-tags", "origin",
       `refs/heads/${authority.authoritativeRef}:refs/remotes/origin/${authority.authoritativeRef}`
     ]);
     await git(authority.repositoryRoot, ["cat-file", "-e", `${authority.authoritativeSha}^{commit}`]);
+  }
+
+  if (authority.existingWorkspaceOnly) {
+    if (authority.isolatedClone) {
+      throw new Error("Existing-workspace PRYSM mode prohibits isolated clones.");
+    }
+    const workspacePath = path.resolve(authority.repositoryRoot);
+    const [sha, branch, porcelain] = await Promise.all([
+      git(workspacePath, ["rev-parse", "HEAD"]),
+      git(workspacePath, ["branch", "--show-current"]),
+      git(workspacePath, ["status", "--porcelain=v1"])
+    ]);
+    if (sha !== authority.authoritativeSha || branch !== authority.authoritativeRef || porcelain.trim()) {
+      throw new Error("Existing PRYSM checkout is not clean at its exact accepted ref/SHA; no clone or worktree is permitted.");
+    }
+    const binding: WorkspaceBinding = {
+      version: 2,
+      runId: authority.runId,
+      trancheId: authority.trancheId,
+      repositoryRole: authority.repositoryRole,
+      repositoryRoot: authority.repositoryRoot,
+      repositoryIdentity: canonicalRepositoryIdentity(authority.repositoryIdentity),
+      expectedRemote: authority.expectedRemote,
+      authoritativeRef: authority.authoritativeRef,
+      authoritativeSha: authority.authoritativeSha,
+      workspacePath,
+      executionBranch: branch,
+      createdAt: new Date().toISOString()
+    };
+    // Binding is durably recorded in run status. Never write a sidecar into or
+    // beside the application checkout, or create a second PRYSM copy.
+    return validateExactWorkspace(git, authority, workspacePath, binding);
   }
 
   const base = path.resolve(authority.executionRoot);

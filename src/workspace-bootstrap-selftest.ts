@@ -127,9 +127,46 @@ async function isolatedCloneChecks(root: string): Promise<void> {
   await assert.rejects(() => reconcileExecutionWorkspace(cloneFailureAuth, cloneFailure.run), /clone failed/);
 }
 
+async function existingPrysmCheckoutChecks(root: string): Promise<void> {
+  const source = path.join(root, "one-existing-prysm-staging");
+  const newWorkspaces = path.join(root, "must-not-create-any-copy");
+  await mkdir(source, { recursive: true });
+  const git = new FakeGit(source, "https://github.com/example/prysm.git", "authorized-sha");
+  const state = git.states.get(source)!;
+  state.sha = "authorized-sha";
+  state.branch = "repair/authorized";
+  const auth: WorkspaceAuthority = {
+    ...authority(source, newWorkspaces, "authorized-sha"),
+    runId: "existing-only-prysm",
+    repositoryRole: "PRYSM_PROJECT",
+    repositoryIdentity: "https://github.com/example/prysm.git",
+    expectedRemote: "https://github.com/example/prysm.git",
+    authoritativeRef: "repair/authorized",
+    existingWorkspaceOnly: true,
+    isolatedClone: false
+  };
+  const result = await reconcileExecutionWorkspace(auth, git.run);
+  assert.equal(result.binding.workspacePath, source);
+  assert.equal(result.created, false);
+  assert.ok(!git.calls.some((call) => ["clone", "worktree", "fetch", "checkout"].includes(call.args[0])));
+  await assert.rejects(
+    () => reconcileExecutionWorkspace({ ...auth, authoritativeSha: "not-authorized" }, git.run),
+    /authorized SHA/
+  );
+  state.sha = "dirty-head";
+  await assert.rejects(() => reconcileExecutionWorkspace(auth, git.run), /not clean at its exact accepted/);
+  state.sha = "authorized-sha";
+  state.porcelain = " M src/file.ts";
+  await assert.rejects(() => reconcileExecutionWorkspace(auth, git.run), /not clean at its exact accepted/);
+  assert.ok(!git.calls.some((call) => ["clone", "worktree", "fetch", "checkout"].includes(call.args[0])));
+  const { access } = await import("node:fs/promises");
+  await assert.rejects(() => access(newWorkspaces));
+}
+
 async function main() {
   const root = await mkdtemp(path.join(os.tmpdir(), "prysm-gacm-workspace-test-"));
   try {
+    await existingPrysmCheckoutChecks(root);
     const source = path.join(root, "source");
     const executionRoot = path.join(root, "execution");
     await mkdir(source, { recursive: true });

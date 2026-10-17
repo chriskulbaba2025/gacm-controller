@@ -644,6 +644,27 @@ Rules for the final five headings:
 `;
 }
 
+export function assertAcceptedPrysmRun(authorization: PrysmRunAuthorization | undefined, status: RepoStatus): void {
+  const cfg = projectConfig("prysm");
+  if (!authorization ||
+      authorization.branch !== cfg.authoritativeRef ||
+      authorization.sha !== cfg.authoritativeSha) {
+    throw new Error("PRYSM run branch/SHA must equal the existing staging accepted authority; no unapproved source pin.");
+  }
+  if (status.branch !== cfg.authoritativeRef) {
+    throw new Error("PRYSM runs require the exact named staging branch, not detached or alternate source.");
+  }
+  if (normalizeRemote(status.remote) !== normalizeRemote(cfg.expectedRemote)) {
+    throw new Error("PRYSM origin does not match the authorized repository.");
+  }
+  if (status.dirty) {
+    throw new Error("PRYSM staging checkout is dirty; no governed run can launch.");
+  }
+  if (status.sha !== cfg.authoritativeSha) {
+    throw new Error("PRYSM staging SHA does not match the accepted authority.");
+  }
+}
+
 export async function startCodexRun(
   project: ProjectKey,
   objective: string,
@@ -679,9 +700,13 @@ export async function startCodexRun(
     ? (authority![resolvedRole!.role === "GACM_GOVERNANCE" ? "governance" : "application"].status as RepoStatus)
     : await getProjectStatus(project);
   const cfg = projectConfig(project);
+  if (project === "prysm") {
+    assertAcceptedPrysmRun(prysmAuthorization, sourcePre);
+    // An unavailable CLI must fail before workspace or proof side effects.
+    await stat(CODEX_CLI_JS);
+  }
   const runId = `${project}-${compactTimestamp()}-${safeLabel(tranche)}-${crypto.randomBytes(3).toString("hex")}`;
   const proofDir = path.join(cfg.proofRoot, runId);
-  await mkdir(proofDir, { recursive: true });
 
   const workspaceAuthority: WorkspaceAuthority = {
     runId,
@@ -693,12 +718,14 @@ export async function startCodexRun(
     authoritativeRef: resolvedRole?.repository.authoritativeRef || prysmAuthorization?.branch || sourcePre.branch,
     authoritativeSha: resolvedRole?.repository.authoritativeSha || prysmAuthorization?.sha || sourcePre.sha,
     executionRoot: cfg.executionRoot,
-    isolatedClone: project === "prysm"
+    existingWorkspaceOnly: project === "prysm",
+    isolatedClone: false
   };
   if (!workspaceAuthority.authoritativeRef) {
     throw new Error("Cannot establish a governed workspace from a detached source without an explicit authority ref.");
   }
   const workspace = await reconcileExecutionWorkspace(workspaceAuthority, gitAtRoot);
+  await mkdir(proofDir, { recursive: true });
   const pre: RepoStatus = {
     project,
     root: workspace.binding.workspacePath,
@@ -981,7 +1008,8 @@ export async function validateCodexResume(runId: string): Promise<RunStatus> {
       authoritativeRef: saved.authoritativeRef,
       authoritativeSha: saved.authoritativeSha,
       executionRoot: cfg.executionRoot,
-      isolatedClone: status.project === "prysm"
+      isolatedClone: saved.isolatedClone === true,
+      existingWorkspaceOnly: saved.existingWorkspaceOnly === true
     };
   }
   await validatePersistedWorkspaceBinding(status.workspaceBinding, currentAuthority, gitAtRoot);
