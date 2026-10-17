@@ -1,5 +1,6 @@
 import "dotenv/config";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile, rename, unlink, readdir } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import {
   cancelCodexRun,
@@ -851,26 +852,79 @@ export async function handleCommand(
   };
 }
 
+function parseControllerState(value: unknown): ControllerState {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Invalid Telegram controller state object");
+  }
+  const s = value as Record<string, unknown>;
+  if (!Number.isSafeInteger(s.updateOffset) || (s.updateOffset as number) < 0 ||
+      typeof s.initialized !== "boolean") {
+    throw new Error("Invalid Telegram controller state offset/initialization");
+  }
+  if (s.lastRunId !== undefined &&
+      (typeof s.lastRunId !== "string" || !/^(prysm|gacm|sandbox)-[A-Za-z0-9._-]+$/.test(s.lastRunId))) {
+    throw new Error("Invalid Telegram controller last run identity");
+  }
+  if (s.lastProject !== undefined && !isProject(String(s.lastProject))) {
+    throw new Error("Invalid Telegram controller last project");
+  }
+  const proposal = s.pendingProposal;
+  if (proposal !== undefined) {
+    if (!proposal || typeof proposal !== "object" || Array.isArray(proposal)) {
+      throw new Error("Invalid Telegram pending proposal");
+    }
+    const p = proposal as Record<string, unknown>;
+    if (typeof p.sourceText !== "string" || typeof p.canonicalCommand !== "string" ||
+        !["run", "stop", "publish"].includes(String(p.action)) ||
+        !isProject(String(p.project)) || typeof p.createdAt !== "string" ||
+        (p.tranche !== undefined && typeof p.tranche !== "string")) {
+      throw new Error("Invalid Telegram pending proposal fields");
+    }
+  }
+  return s as unknown as ControllerState;
+}
+
 export async function loadControllerState(): Promise<ControllerState> {
-  await mkdir(RUNTIME_DIR, { recursive: true });
+  let raw: string;
   try {
-    const raw = await readFile(STATE_PATH, "utf8");
-    const parsed = JSON.parse(raw) as ControllerState;
-    return {
-      updateOffset: Number.isInteger(parsed.updateOffset) ? parsed.updateOffset : 0,
-      initialized: parsed.initialized === true,
-      lastRunId: parsed.lastRunId,
-      lastProject: parsed.lastProject,
-      pendingProposal: parsed.pendingProposal
-    };
-  } catch {
+    raw = await readFile(STATE_PATH, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    let names: string[];
+    try {
+      names = await readdir(RUNTIME_DIR);
+    } catch (dirError) {
+      if ((dirError as NodeJS.ErrnoException).code !== "ENOENT") throw dirError;
+      names = [];
+    }
+    if (names.some((n) => n.startsWith(".telegram-controller-state-") && n.endsWith(".tmp"))) {
+      throw new Error("Telegram controller state is missing with an orphaned atomic write; HOLD");
+    }
     return { updateOffset: 0, initialized: false };
   }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("Corrupt Telegram controller state; HOLD without resetting polling offset");
+  }
+  return parseControllerState(parsed);
 }
 
 export async function saveControllerState(state: ControllerState): Promise<void> {
+  const validated = parseControllerState(state);
   await mkdir(RUNTIME_DIR, { recursive: true });
-  await writeFile(STATE_PATH, JSON.stringify(state, null, 2) + "\n", "utf8");
+  const tempPath = path.join(RUNTIME_DIR, `.telegram-controller-state-${process.pid}-${randomUUID()}.tmp`);
+  try {
+    await writeFile(tempPath, JSON.stringify(validated, null, 2) + "\n", {
+      encoding: "utf8", flag: "wx", flush: true
+    });
+    await rename(tempPath, STATE_PATH);
+  } finally {
+    try { await unlink(tempPath); } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
 }
 
 interface TelegramUpdate {
