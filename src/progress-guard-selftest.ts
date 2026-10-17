@@ -1,0 +1,21 @@
+import assert from "node:assert/strict";
+import { evaluateProgressGate, parseProgressEvent } from "./progress-guard.js";
+
+const e = (event: unknown) => parseProgressEvent(JSON.stringify(event));
+assert.equal(e({ type: "item.completed", item: { type: "file_change", status: "completed" } }).meaningful, true);
+assert.equal(e({ type: "item.completed", item: { type: "file_change", status: "failed" } }).meaningful, false);
+assert.equal(e({ type: "item.completed", item: { type: "command_execution", status: "completed", command: "npm run typecheck" } }).meaningful, true);
+assert.equal(e({ type: "item.completed", item: { type: "command_execution", status: "completed", command: "node --test src/sample.test.js" } }).meaningful, true);
+assert.equal(e({ type: "item.completed", item: { type: "command_execution", status: "in_progress", command: "npm test" } }).meaningful, false);
+assert.equal(e({ type: "item.completed", item: { type: "command_execution", status: "completed", command: "cat README.md" } }).meaningful, false);
+assert.equal(e({ type: "item.completed", item: { type: "agent_message", text: "I ran npm test" } }).meaningful, false);
+assert.equal(parseProgressEvent("not-json").meaningful, false);
+assert.equal(parseProgressEvent("{}").activity, false);
+assert.equal(e({ type: "item.started", item: { type: "command_execution" } }).activity, true);
+assert.deepEqual(e({ type: "turn.completed", usage: { input_tokens: 1250, cached_input_tokens: 1000, output_tokens: 300 } }).usage, { inputTokens: 1250, cachedInputTokens: 1000, outputTokens: 300 });
+assert.equal(e({ type: "turn.completed", usage: { input_tokens: -1, output_tokens: 200 } }).usage, null);
+assert.equal(evaluateProgressGate(59_000,59_000,false),null);
+assert.equal(evaluateProgressGate(61_000,60_000,false),"NO_ACTIVITY");
+assert.equal(evaluateProgressGate(151_000,15_000,false),"NO_MEANINGFUL_PROGRESS");
+assert.equal(evaluateProgressGate(200_000,200_000,true),null);
+console.log(JSON.stringify({ pass: true, telemetry: true, correctProgressClass: true, noFalseMessageProgress: true, malformedFailsClosed: true, noActivityGuard: true, noMeaningfulGuard: true, meaningfulAllowsLongRun: true, providerCalls: 0, childLaunches: 0 }));

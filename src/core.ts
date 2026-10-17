@@ -40,6 +40,8 @@ import {
   type TerminalEvidence
 } from "./status-contract.js";
 
+import { evaluateProgressGate, parseProgressEvent, type StopReason } from "./progress-guard.js";
+
 const execFile = promisify(execFileCb);
 const activeProcesses = new Map<string, ChildProcess>();
 const cancelledRuns = new Set<string>();
@@ -614,6 +616,7 @@ HARD CONSTRAINTS:
 - Preserve unrelated existing changes. The pre-run working tree dirty state is: ${pre.dirty}.
 - Maximum three failed repairs in the same defect family; then stop and report the reset requirement.
 - Use targeted tests during repair. Do not run broad regression unless the objective explicitly requires it.
+- For PRYSM: reach a verifiable source edit or completed targeted check promptly; if no meaningful action is emitted inside the controller early-progress window, it stops the run with BLOCKED, not PASS.
 - Missing evidence is not negative evidence. Preserve PASS / FAIL / HOLD and UNKNOWN / PARTIAL / UNAVAILABLE semantics.
 - No network-dependent shell actions.
 - Write proof to: ${path.join(proofDir, "PROOF.md")}
@@ -781,6 +784,7 @@ export async function startCodexRun(
 
   const args = [
     "exec",
+    ...(project === "prysm" ? ["--json"] : []),
     "-C", workspace.binding.workspacePath,
     "-m", CODEX_MODEL,
     "--sandbox", "workspace-write",
@@ -839,9 +843,53 @@ export async function startCodexRun(
 
   let terminalHandled = false;
 
+  // S2: JSONL telemetry is evidence, not proof of successful code or tests.
+  // Apply the early no-result gate to PRYSM only; other project launch paths stay unchanged.
+  const progressStarted = Date.now();
+  let lastEventAt = progressStarted;
+  let firstMeaningfulAt: string | null = null;
+  let progressStopReason: StopReason | null = null;
+  let tokenUsage: { inputTokens: number; outputTokens: number; cachedInputTokens: number } | null = null;
+  let progressRemainder = "";
+  if (project === "prysm") {
+    child.stdout?.on("data", (chunk: Buffer | string) => {
+      progressRemainder += String(chunk);
+      const records = progressRemainder.split(/\r?\n/);
+      progressRemainder = records.pop() || "";
+      if (progressRemainder.length > 2_000_000) progressRemainder = ""; // bounded parser memory
+      for (const line of records) {
+        const observed = parseProgressEvent(line);
+        if (observed.activity) lastEventAt = Date.now();
+        if (observed.meaningful && firstMeaningfulAt === null) firstMeaningfulAt = new Date().toISOString();
+        if (observed.usage) tokenUsage = observed.usage;
+      }
+    });
+  }
+  const watchdog = project === "prysm" ? setInterval(() => {
+    if (terminalHandled || progressStopReason !== null) return;
+    const now = Date.now();
+    const stop = evaluateProgressGate(now - progressStarted, now - lastEventAt, firstMeaningfulAt !== null);
+    if (!stop) return;
+    progressStopReason = stop;
+    // This file is controller-authored, separate from Codex proof or terminal evidence.
+    void writeFile(path.join(proofDir, "progress-stop.json"), JSON.stringify({
+      runId, reason: stop, observedAt: new Date(now).toISOString(),
+      firstMeaningfulAt, tokenUsage: tokenUsage || "UNAVAILABLE",
+      result: "BLOCKED", source: "GACM_CONTROLLER_S2"
+    }, null, 2) + "\n", "utf8").catch(() => undefined);
+    if (child.pid) {
+      void execFile("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
+        windowsHide: true, timeout: 10_000
+      }).catch(() => { child.kill(); });
+    } else {
+      child.kill();
+    }
+  }, 5_000) : null;
+
   child.on("error", async (error) => {
     if (terminalHandled) return;
     terminalHandled = true;
+    if (watchdog) clearInterval(watchdog);
     stderrStream.write(`\nPROCESS ERROR: ${String(error)}\n`);
     status.state = "FAILED";
     status.finishedAt = new Date().toISOString();
@@ -865,6 +913,7 @@ export async function startCodexRun(
   child.on("close", async (code) => {
     if (terminalHandled) return;
     terminalHandled = true;
+    if (watchdog) clearInterval(watchdog);
     stdoutStream.end();
     stderrStream.end();
     status.exitCode = code;
@@ -885,12 +934,27 @@ export async function startCodexRun(
       }
     } catch {}
 
-    status.state = classifyGovernedResult(
+    if (progressStopReason !== null) {
+      finalText = `RESULT: BLOCKED\nBLOCKER: GACM S2 stopped this run: ${progressStopReason}. No verified edit/test progress within the bounded window.\nNEXT ACTION: Inspect progress-stop.json and codex-stdout.log for this exact run; do not retry automatically.\n`;
+    }
+    status.state = progressStopReason !== null ? "BLOCKED" : classifyGovernedResult(
       code,
       cancelledRuns.has(runId),
       finalText,
       proofExists
     );
+    if (project === "prysm") {
+      try {
+        await writeFile(path.join(proofDir, "progress-summary.json"), JSON.stringify({
+          runId, result: status.state, firstMeaningfulAt,
+          elapsedMs: Date.now() - progressStarted,
+          tokenUsage: tokenUsage || "UNAVAILABLE",
+          controllerStop: progressStopReason,
+          outputEventsAvailable: lastEventAt > progressStarted,
+          source: "GACM_CONTROLLER_S2"
+        }, null, 2) + "\n", "utf8");
+      } catch { /* Never turn an observed terminal result into PASS because telemetry write failed. */ }
+    }
     status.terminalEvidence = proofExists ? "PROOF_PRESENT" : "NONE";
 
     const operatorAlert = buildOperatorAlert(
