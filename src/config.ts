@@ -10,6 +10,9 @@ export interface ProjectConfig {
   expectedRemote: string;
   proofRoot: string;
   executionRoot: string;
+  authoritativeRef?: string;
+  authoritativeSha?: string;
+  allowDetachedHead?: boolean;
 }
 
 export interface GacmRepositoryConfig {
@@ -45,10 +48,13 @@ export const GACM_REPOSITORIES: Record<GacmRepositoryRole, GacmRepositoryConfig>
 export const PROJECTS: Record<ProjectKey, ProjectConfig> = {
   prysm: {
     key: "prysm",
-    root: "C:\\Users\\kulba\\Desktop\\prysm-staging-isolated",
+    root: "C:\\g\\p001",
     expectedRemote: "https://github.com/chriskulbaba2025/prysm-staging-isolated.git",
+    authoritativeRef: "repair/prysm-evidence-accuracy-20261013",
+    authoritativeSha: "c0460142224fd6f9cfd8262dd8816aa6ccd89ac7",
+    allowDetachedHead: true,
     proofRoot: "C:\\Users\\kulba\\Downloads\\PRYSM-MCP-RUNS",
-    executionRoot: "C:\\Users\\kulba\\Downloads\\PRYSM-MCP-EXECUTION-WORKSPACES"
+    executionRoot: "C:\\g\\p"
   },
   gacm: {
     key: "gacm",

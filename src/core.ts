@@ -29,6 +29,16 @@ import {
   type WorkspaceAuthority,
   type WorkspaceBinding
 } from "./workspace-bootstrap.js";
+import {
+  CONTROLLER_REPOSITORY_REMOTE,
+  assertReadableRunStatus,
+  persistRunStatus,
+  readPersistedRunStatus,
+  type ControllerSourceIdentity,
+  type ProductAcceptance,
+  type StatusAuthorityContext,
+  type TerminalEvidence
+} from "./status-contract.js";
 
 const execFile = promisify(execFileCb);
 const activeProcesses = new Map<string, ChildProcess>();
@@ -199,6 +209,8 @@ export interface GacmAuthoritySet {
 }
 
 export interface RunStatus {
+  version: 1;
+  controllerSource: ControllerSourceIdentity;
   runId: string;
   project: ProjectKey;
   tranche: string;
@@ -216,7 +228,14 @@ export interface RunStatus {
   authority?: GacmAuthoritySet;
   workspaceAuthority?: WorkspaceAuthority;
   workspaceBinding?: WorkspaceBinding;
+  terminalEvidence: TerminalEvidence;
+  productAcceptance: ProductAcceptance;
   notification: "PENDING" | "SENT" | "NOT_CONFIGURED" | "FAILED" | "SUPPRESSED";
+}
+
+export interface PrysmRunAuthorization {
+  branch: string;
+  sha: string;
 }
 
 function normalizePath(value: string): string {
@@ -244,6 +263,69 @@ async function gitAtRoot(root: string, args: string[]): Promise<string> {
     maxBuffer: 2_000_000
   });
   return String(stdout).trim();
+}
+
+async function getControllerSourceIdentity(): Promise<ControllerSourceIdentity> {
+  const root = process.cwd();
+  const [topLevel, remote, branch, sha, porcelain] = await Promise.all([
+    gitAtRoot(root, ["rev-parse", "--show-toplevel"]),
+    gitAtRoot(root, ["remote", "get-url", "origin"]),
+    gitAtRoot(root, ["branch", "--show-current"]),
+    gitAtRoot(root, ["rev-parse", "HEAD"]),
+    gitAtRoot(root, ["status", "--porcelain=v1"])
+  ]);
+  if (normalizePath(topLevel) !== normalizePath(root)) {
+    throw new Error(`Controller source identity failure: top-level is ${topLevel}, expected ${root}.`);
+  }
+  if (normalizeRemote(remote) !== normalizeRemote(CONTROLLER_REPOSITORY_REMOTE)) {
+    throw new Error(`Controller source identity failure: origin is ${remote}, expected ${CONTROLLER_REPOSITORY_REMOTE}.`);
+  }
+  if (!branch || !/^[0-9a-f]{40}$/i.test(sha) || porcelain) {
+    throw new Error("Controller source identity failure: source must have a named branch, valid HEAD SHA, and clean worktree.");
+  }
+  return { repositoryRoot: topLevel, repositoryIdentity: remote, branch, sha, clean: true };
+}
+
+async function getStatusAuthorityContext(project: ProjectKey): Promise<StatusAuthorityContext> {
+  if (project === "gacm") {
+    const authority = await getGacmAuthorityStatus();
+    const trusted = (role: GacmRepositoryRole) => {
+      const selected = authority[role === "GACM_GOVERNANCE" ? "governance" : "application"];
+      if (!selected.available || !selected.status) {
+        throw new Error(`GACM ${role} authority is unavailable while validating persisted status.`);
+      }
+      return {
+        role,
+        repositoryRoot: selected.root,
+        expectedRemote: selected.expectedRemote,
+        observedRemote: selected.status.remote,
+        authoritativeRef: selected.authoritativeRef,
+        authoritativeSha: selected.authoritativeSha,
+        observedBranch: selected.status.branch,
+        observedSha: selected.status.sha
+      };
+    };
+    return {
+      gacm: {
+        governance: trusted("GACM_GOVERNANCE"),
+        application: trusted("GACM_APPLICATION")
+      }
+    };
+  }
+
+  const observed = await getProjectStatus(project);
+  return {
+    project: {
+      role: `${project.toUpperCase()}_PROJECT`,
+      repositoryRoot: observed.root,
+      expectedRemote: observed.expectedRemote,
+      observedRemote: observed.remote,
+      authoritativeRef: observed.branch,
+      authoritativeSha: observed.sha,
+      observedBranch: observed.branch,
+      observedSha: observed.sha
+    }
+  };
 }
 
 async function getRepositoryStatus(
@@ -453,8 +535,16 @@ function runPathFromId(runId: string): { project: ProjectKey; proofDir: string }
 }
 
 async function writeRunStatus(status: RunStatus): Promise<void> {
-  await mkdir(status.proofDir, { recursive: true });
-  await writeFile(path.join(status.proofDir, "status.json"), JSON.stringify(status, null, 2) + "\n", "utf8");
+  const controllerSource = await getControllerSourceIdentity();
+  const authority = await getStatusAuthorityContext(status.project);
+  await persistRunStatus(path.join(status.proofDir, "status.json"), status, {
+    controllerSource,
+    runId: status.runId,
+    project: status.project,
+    proofDir: status.proofDir,
+    activeProcess: activeProcesses.has(status.runId),
+    authority
+  });
 }
 
 async function sendWebhook(
@@ -557,8 +647,10 @@ export async function startCodexRun(
   project: ProjectKey,
   objective: string,
   tranche: string,
-  gacmRole?: GacmRepositoryRole
+  gacmRole?: GacmRepositoryRole,
+  prysmAuthorization?: PrysmRunAuthorization
 ): Promise<RunStatus> {
+  const controllerSource = await getControllerSourceIdentity();
   if (activeRunId) {
     const current = await getCodexStatus(activeRunId);
     if (current.state === "RUNNING") {
@@ -577,6 +669,11 @@ export async function startCodexRun(
       throw new Error(`GACM ${resolvedRole.role} repository is unavailable: ${selected.error || "status unavailable"}`);
     }
   }
+  if (project === "prysm") {
+    if (!prysmAuthorization || !/^[A-Za-z0-9._/-]+$/.test(prysmAuthorization.branch) || !/^[0-9a-f]{40}$/i.test(prysmAuthorization.sha)) {
+      throw new Error("PRYSM runs require an explicit branch and full 40-character commit SHA.");
+    }
+  }
   const sourcePre = project === "gacm"
     ? (authority![resolvedRole!.role === "GACM_GOVERNANCE" ? "governance" : "application"].status as RepoStatus)
     : await getProjectStatus(project);
@@ -592,9 +689,10 @@ export async function startCodexRun(
     repositoryRoot: resolvedRole?.repository.root || sourcePre.root,
     repositoryIdentity: resolvedRole?.repository.expectedRemote || sourcePre.expectedRemote,
     expectedRemote: resolvedRole?.repository.expectedRemote || sourcePre.expectedRemote,
-    authoritativeRef: resolvedRole?.repository.authoritativeRef || sourcePre.branch,
-    authoritativeSha: resolvedRole?.repository.authoritativeSha || sourcePre.sha,
-    executionRoot: cfg.executionRoot
+    authoritativeRef: resolvedRole?.repository.authoritativeRef || prysmAuthorization?.branch || sourcePre.branch,
+    authoritativeSha: resolvedRole?.repository.authoritativeSha || prysmAuthorization?.sha || sourcePre.sha,
+    executionRoot: cfg.executionRoot,
+    isolatedClone: project === "prysm"
   };
   if (!workspaceAuthority.authoritativeRef) {
     throw new Error("Cannot establish a governed workspace from a detached source without an explicit authority ref.");
@@ -619,6 +717,8 @@ export async function startCodexRun(
   };
 
   const status: RunStatus = {
+    version: 1,
+    controllerSource,
     runId,
     project,
     tranche,
@@ -636,6 +736,8 @@ export async function startCodexRun(
     authority,
     workspaceAuthority,
     workspaceBinding: workspace.binding,
+    terminalEvidence: "NONE",
+    productAcceptance: "HOLD",
     notification: WEBHOOK_URL ? "PENDING" : "NOT_CONFIGURED"
   };
 
@@ -760,6 +862,7 @@ export async function startCodexRun(
       finalText,
       proofExists
     );
+    status.terminalEvidence = proofExists ? "PROOF_PRESENT" : "NONE";
 
     const operatorAlert = buildOperatorAlert(
       status.state,
@@ -823,9 +926,19 @@ export async function startCodexRun(
 }
 
 export async function getCodexStatus(runId: string): Promise<RunStatus> {
-  const { proofDir } = runPathFromId(runId);
-  const raw = await readFile(path.join(proofDir, "status.json"), "utf8");
-  return JSON.parse(raw) as RunStatus;
+  const { project, proofDir } = runPathFromId(runId);
+  const controllerSource = await getControllerSourceIdentity();
+  const authority = await getStatusAuthorityContext(project);
+  const status = await readPersistedRunStatus(path.join(proofDir, "status.json"), {
+    controllerSource,
+    runId,
+    project,
+    proofDir,
+    activeProcess: activeProcesses.has(runId),
+    authority
+  });
+  assertReadableRunStatus(status, activeProcesses.has(runId));
+  return status as unknown as RunStatus;
 }
 
 export async function validateCodexResume(runId: string): Promise<RunStatus> {
@@ -852,10 +965,10 @@ export async function validateCodexResume(runId: string): Promise<RunStatus> {
       executionRoot: cfg.executionRoot
     };
   } else {
-    const [branch, sha] = await Promise.all([
-      gitAtRoot(cfg.root, ["branch", "--show-current"]),
-      gitAtRoot(cfg.root, ["rev-parse", "HEAD"])
-    ]);
+    const saved = status.workspaceAuthority;
+    if (status.project === "prysm" && (!saved.authoritativeRef || !/^[0-9a-f]{40}$/i.test(saved.authoritativeSha))) {
+      throw new Error("Cannot resume a PRYSM run without the persisted explicit branch and full SHA authorization.");
+    }
     currentAuthority = {
       runId: status.runId,
       trancheId: status.tranche,
@@ -863,9 +976,10 @@ export async function validateCodexResume(runId: string): Promise<RunStatus> {
       repositoryRoot: cfg.root,
       repositoryIdentity: cfg.expectedRemote,
       expectedRemote: cfg.expectedRemote,
-      authoritativeRef: branch,
-      authoritativeSha: sha,
-      executionRoot: cfg.executionRoot
+      authoritativeRef: saved.authoritativeRef,
+      authoritativeSha: saved.authoritativeSha,
+      executionRoot: cfg.executionRoot,
+      isolatedClone: status.project === "prysm"
     };
   }
   await validatePersistedWorkspaceBinding(status.workspaceBinding, currentAuthority, gitAtRoot);

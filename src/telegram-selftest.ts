@@ -23,6 +23,14 @@ const deps: ControllerDeps = {
     calls.push({ fn: "details", runId });
     return {
       status: {
+        version: 1,
+        controllerSource: {
+          repositoryRoot: "C:\\controller",
+          repositoryIdentity: "https://github.com/chriskulbaba2025/gacm-controller.git",
+          branch: "test-branch",
+          sha: "1234567890abcdef1234567890abcdef12345678",
+          clean: true
+        },
         runId,
         project: "prysm",
         tranche: "T1",
@@ -36,6 +44,8 @@ const deps: ControllerDeps = {
         proofDir: "C:\\proof",
         preRunSha: "abc",
         preRunDirty: false,
+        terminalEvidence: "PROOF_PRESENT",
+        productAcceptance: "HOLD",
         notification: "SENT"
       },
       stdoutTail: "",
@@ -46,6 +56,14 @@ const deps: ControllerDeps = {
   async cancelCodexRun(runId) {
     calls.push({ fn: "stop", runId });
     return {
+      version: 1,
+      controllerSource: {
+        repositoryRoot: "C:\\controller",
+        repositoryIdentity: "https://github.com/chriskulbaba2025/gacm-controller.git",
+        branch: "test-branch",
+        sha: "1234567890abcdef1234567890abcdef12345678",
+        clean: true
+      },
       runId,
       project: "prysm",
       tranche: "T1",
@@ -59,12 +77,22 @@ const deps: ControllerDeps = {
       proofDir: "C:\\proof",
       preRunSha: "abc",
       preRunDirty: false,
+      terminalEvidence: "NONE",
+      productAcceptance: "HOLD",
       notification: "SUPPRESSED"
     };
   },
-  async startCodexRun(project, objective, tranche) {
-    calls.push({ fn: "run", project, objective, tranche });
+  async startCodexRun(project, objective, tranche, _gacmRole, prysmAuthorization) {
+    calls.push({ fn: "run", project, objective, tranche, ...(prysmAuthorization ? { prysmAuthorization } : {}) });
     return {
+      version: 1,
+      controllerSource: {
+        repositoryRoot: "C:\\controller",
+        repositoryIdentity: "https://github.com/chriskulbaba2025/gacm-controller.git",
+        branch: "test-branch",
+        sha: "1234567890abcdef1234567890abcdef12345678",
+        clean: true
+      },
       runId: `${project}-test-run`,
       project,
       tranche,
@@ -78,6 +106,8 @@ const deps: ControllerDeps = {
       proofDir: "C:\\proof",
       preRunSha: "abc",
       preRunDirty: false,
+      terminalEvidence: "NONE",
+      productAcceptance: "HOLD",
       notification: "PENDING"
     };
   },
@@ -350,10 +380,9 @@ async function main() {
     state,
     deps
   );
-  assert.match(cancelProposal.reply, /Reply YES/);
+  assert.match(cancelProposal.reply, /explicit branch and full 40-character SHA/);
   const runCountBeforeCancel = calls.filter((x) => x.fn === "run").length;
-  const cancelledProposal = await handleCommand("NO", cancelProposal.state!, deps);
-  assert.match(cancelledProposal.reply, /cancelled/i);
+  assert.equal(cancelProposal.state?.pendingProposal, undefined);
   assert.equal(calls.filter((x) => x.fn === "run").length, runCountBeforeCancel);
 
   const superseded = await handleCommand(
@@ -432,7 +461,7 @@ async function main() {
   );
   assert.match(badPublish.reply, /Format:/);
 
-  const run = await handleCommand("run prysm T-01 :: Repair only the authorized boundary.", state, deps);
+  const run = await handleCommand("run prysm repair/prysm-evidence-accuracy-20261013 0ad1f183d86a0f4b6c066a9ef8f3c96bb8350813 T-01 :: Repair only the authorized boundary.", state, deps);
   assert.equal(run.state?.lastProject, "prysm");
   assert.equal(run.state?.lastRunId, "prysm-test-run");
   state = run.state!;
@@ -442,10 +471,14 @@ async function main() {
     fn: "run",
     project: "prysm",
     objective: "Repair only the authorized boundary.",
-    tranche: "T-01"
+    tranche: "T-01",
+    prysmAuthorization: {
+      branch: "repair/prysm-evidence-accuracy-20261013",
+      sha: "0ad1f183d86a0f4b6c066a9ef8f3c96bb8350813"
+    }
   });
 
-  const follow = await handleCommand("continue T-02 :: Run the next explicitly authorized check.", state, deps);
+  const follow = await handleCommand("continue repair/prysm-evidence-accuracy-20261013 0ad1f183d86a0f4b6c066a9ef8f3c96bb8350813 T-02 :: Run the next explicitly authorized check.", state, deps);
   assert.equal(follow.state?.lastProject, "prysm");
 
   const details = await handleCommand("details", follow.state!, deps);

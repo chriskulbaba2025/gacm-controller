@@ -17,13 +17,26 @@ interface FakeState { topLevel: string; remote: string; commonDir: string; sha: 
 class FakeGit {
   readonly calls: Array<{ cwd: string; args: string[] }> = [];
   readonly states = new Map<string, FakeState>();
-  constructor(readonly source: string, readonly remote: string, readonly remoteSha: string, readonly failFetch = false) {
+  constructor(readonly source: string, readonly remote: string, readonly remoteSha: string, readonly failFetch = false, readonly failClone = false) {
     this.states.set(source, { topLevel: source, remote, commonDir: path.join(source, ".git"), sha: "stale-head", branch: "main", porcelain: "", ancestor: true });
   }
   readonly run: WorkspaceGit = async (cwd, args) => {
     this.calls.push({ cwd, args });
     const state = this.states.get(cwd);
     if (args[0] === "ls-remote") return `${this.remoteSha}\trefs/heads/${args[2].replace("refs/heads/", "")}\n`;
+    if (args[0] === "clone") {
+      if (this.failClone) throw new Error("clone failed");
+      const workspace = args[args.length - 1];
+      await mkdir(workspace, { recursive: true });
+      this.states.set(workspace, { topLevel: workspace, remote: this.remote, commonDir: path.join(workspace, ".git"), sha: this.remoteSha, branch: args[4], porcelain: "", ancestor: true });
+      return "";
+    }
+    if (args[0] === "checkout") {
+      const state = this.states.get(cwd)!;
+      state.sha = args[2];
+      state.branch = "";
+      return "";
+    }
     if (args[0] === "cat-file") {
       if (this.failFetch) throw new Error("object missing locally");
       if (args[2] === `${this.remoteSha}^{commit}`) return "";
@@ -85,6 +98,33 @@ async function seedWorkspace(
   };
   await writeFile(workspaceBindingPath(workspace), JSON.stringify(binding), "utf8");
   return workspace;
+}
+
+async function isolatedCloneChecks(root: string): Promise<void> {
+  const source = path.join(root, "protected-prysm");
+  const executionRoot = path.join(root, "isolated-execution");
+  await mkdir(source, { recursive: true });
+  const git = new FakeGit(source, "https://github.com/example/prysm.git", "authorized-sha");
+  const auth = authority(source, executionRoot, "authorized-sha");
+  auth.repositoryRole = "PRYSM_PROJECT";
+  auth.repositoryIdentity = "https://github.com/example/prysm.git";
+  auth.expectedRemote = auth.repositoryIdentity;
+  auth.repositoryIdentity = auth.expectedRemote;
+  auth.authoritativeRef = "repair/authorized";
+  auth.isolatedClone = true;
+  const exact = await reconcileExecutionWorkspace(auth, git.run);
+  assert.equal(exact.sha, "authorized-sha");
+  assert.equal(exact.binding.executionBranch, "repair/authorized");
+  assert.equal(git.states.get(exact.binding.workspacePath)?.commonDir, path.join(exact.binding.workspacePath, ".git"));
+  assert.equal(git.states.get(source)?.sha, "stale-head");
+
+  const changed = { ...auth, authoritativeSha: "changed-authority" };
+  await assert.rejects(() => validatePersistedWorkspaceBinding(exact.binding, changed, git.run), /binding/);
+  const remoteChanged = new FakeGit(source, auth.expectedRemote, "different-sha");
+  await assert.rejects(() => reconcileExecutionWorkspace(auth, remoteChanged.run), /authorized SHA/);
+  const cloneFailureAuth = { ...auth, executionRoot: path.join(root, "clone-failure") };
+  const cloneFailure = new FakeGit(source, auth.expectedRemote, auth.authoritativeSha, false, true);
+  await assert.rejects(() => reconcileExecutionWorkspace(cloneFailureAuth, cloneFailure.run), /clone failed/);
 }
 
 async function main() {
@@ -216,6 +256,7 @@ async function main() {
     const forbidden = git.calls.flatMap((call) => call.args[0]);
     assert.equal(forbidden.some((command) => ["reset", "clean", "checkout", "stash", "merge", "rebase", "cherry-pick"].includes(command)), false);
     assert.equal(git.states.get(source)?.sha, "stale-head");
+    await isolatedCloneChecks(root);
 
     console.log(JSON.stringify({
       pass: true,

@@ -96,11 +96,18 @@ function createServer(): McpServer {
         project: ProjectSchema,
         tranche: z.string().min(1).max(120),
         objective: z.string().min(1).max(12_000),
-        gacmRole: z.enum(["GACM_GOVERNANCE", "GACM_APPLICATION"]).optional()
+        gacmRole: z.enum(["GACM_GOVERNANCE", "GACM_APPLICATION"]).optional(),
+        prysmBranch: z.string().min(1).max(240).optional(),
+        prysmSha: z.string().regex(/^[0-9a-f]{40}$/i).optional()
       })
     },
-    async ({ project, tranche, objective, gacmRole }) => {
-      try { return asText(await startCodexRun(project, objective, tranche, gacmRole)); }
+    async ({ project, tranche, objective, gacmRole, prysmBranch, prysmSha }) => {
+      try {
+        if ((prysmBranch && !prysmSha) || (!prysmBranch && prysmSha)) {
+          throw new Error("PRYSM branch and full SHA must be supplied together.");
+        }
+        return asText(await startCodexRun(project, objective, tranche, gacmRole, project === "prysm" ? { branch: prysmBranch!, sha: prysmSha! } : undefined));
+      }
       catch (error) { return asError(error); }
     }
   );

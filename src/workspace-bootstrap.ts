@@ -11,6 +11,7 @@ export interface WorkspaceAuthority {
   authoritativeRef: string;
   authoritativeSha: string;
   executionRoot: string;
+  isolatedClone?: boolean;
 }
 
 export interface WorkspaceBinding {
@@ -62,6 +63,10 @@ function safeRunLabel(value: string): string {
   return safe;
 }
 
+function isIsolatedClone(authority: WorkspaceAuthority): boolean {
+  return authority.isolatedClone === true;
+}
+
 function assertBinding(binding: WorkspaceBinding, authority: WorkspaceAuthority, workspacePath: string): void {
   const same = binding.version === 2 &&
     binding.runId === authority.runId &&
@@ -108,9 +113,19 @@ async function validateExactWorkspace(
       canonicalRepositoryIdentity(remote) !== canonicalRepositoryIdentity(authority.repositoryIdentity)) {
     throw new Error("Execution workspace remote identity does not match the authorized repository.");
   }
-  const authorizedCommonDir = await git(authority.repositoryRoot, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
-  if (normalizePath(commonDir) !== normalizePath(authorizedCommonDir)) {
-    throw new Error("Execution workspace Git common directory does not match the authorized repository.");
+  if (isIsolatedClone(authority)) {
+    if (normalizePath(commonDir) !== normalizePath(path.join(workspacePath, ".git"))) {
+      throw new Error("PRYSM execution workspace is not an independent Git clone.");
+    }
+  } else {
+    const authorizedCommonDir = await git(authority.repositoryRoot, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+    if (normalizePath(commonDir) !== normalizePath(authorizedCommonDir)) {
+      throw new Error("Execution workspace Git common directory does not match the authorized repository.");
+    }
+  }
+  const currentRemoteHead = await git(workspacePath, ["ls-remote", "origin", `refs/heads/${authority.authoritativeRef}`]);
+  if ((currentRemoteHead.split(/\s+/)[0] || "") !== authority.authoritativeSha) {
+    throw new Error("Execution workspace remote authority changed; resume is blocked.");
   }
   if (sha !== authority.authoritativeSha) {
     throw new Error(`Execution workspace HEAD ${sha} is not authorized SHA ${authority.authoritativeSha}.`);
@@ -118,7 +133,7 @@ async function validateExactWorkspace(
   if (porcelain.trim()) {
     throw new Error("Execution workspace is dirty; refusing to reset, clean, stash, or overwrite it.");
   }
-  if ((branch || null) !== binding.executionBranch) {
+  if (!isIsolatedClone(authority) && (branch || null) !== binding.executionBranch) {
     throw new Error("Execution workspace branch/worktree identity changed; resume is blocked.");
   }
   if (normalizePath(topLevel) !== normalizePath(workspacePath)) {
@@ -189,6 +204,32 @@ export async function reconcileExecutionWorkspace(
       }
     }
     workspacePath = path.join(base, `${safeRunLabel(authority.runId)}-${suffix++}`);
+  }
+
+  if (isIsolatedClone(authority)) {
+    await git(authority.repositoryRoot, ["clone", "--no-tags", "--single-branch", "--branch", authority.authoritativeRef, authority.expectedRemote, workspacePath]);
+    const clonedRemoteHead = await git(workspacePath, ["ls-remote", "origin", `refs/heads/${authority.authoritativeRef}`]);
+    if ((clonedRemoteHead.split(/\s+/)[0] || "") !== authority.authoritativeSha) {
+      throw new Error("PRYSM remote authority changed during clone; refusing launch.");
+    }
+    await git(workspacePath, ["cat-file", "-e", `${authority.authoritativeSha}^{commit}`]);
+    await git(workspacePath, ["checkout", "--detach", authority.authoritativeSha]);
+    const binding: WorkspaceBinding = {
+      version: 2,
+      runId: authority.runId,
+      trancheId: authority.trancheId,
+      repositoryRole: authority.repositoryRole,
+      repositoryRoot: authority.repositoryRoot,
+      repositoryIdentity: canonicalRepositoryIdentity(authority.repositoryIdentity),
+      expectedRemote: authority.expectedRemote,
+      authoritativeRef: authority.authoritativeRef,
+      authoritativeSha: authority.authoritativeSha,
+      workspacePath,
+      executionBranch: authority.authoritativeRef,
+      createdAt: new Date().toISOString()
+    };
+    await writeFile(workspaceBindingPath(workspacePath), JSON.stringify(binding, null, 2) + "\n", "utf8");
+    return { ...(await validateExactWorkspace(git, authority, workspacePath, binding)), created: true };
   }
 
   const executionBranch = `governed/${safeRunLabel(authority.repositoryRole)}-${safeRunLabel(authority.runId)}`;

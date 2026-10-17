@@ -72,6 +72,13 @@ function splitBoundedInstruction(body: string): { tranche: string; objective: st
   return { tranche, objective };
 }
 
+function parsePrysmTargetedInstruction(body: string): { branch: string; sha: string; tranche: string; objective: string } | null {
+  const match = body.match(/^(\S+)\s+([0-9a-f]{40})\s+([\s\S]+)$/i);
+  if (!match) return null;
+  const bounded = splitBoundedInstruction(match[3]);
+  return bounded ? { branch: match[1], sha: match[2], ...bounded } : null;
+}
+
 function compact(value: string, max = 2800): string {
   return value.length <= max ? value : value.slice(0, max) + "\n…[truncated]";
 }
@@ -344,6 +351,9 @@ export function interpretNaturalLanguage(
     }
 
     const tranche = deriveTrancheLabel(sourceText);
+    if (project === "prysm") {
+      return { kind: "clarify", reply: "PRYSM runs require an explicit branch and full 40-character SHA. Use: run prysm <branch> <full-sha> <tranche> :: <objective>." };
+    }
     return {
       kind: "proposal",
       proposal: {
@@ -510,6 +520,12 @@ function interpretationFromLlm(
     }
 
     const tranche = sanitizeTranche(intent.tranche, sourceText);
+    if (intent.project === "prysm") {
+      return {
+        kind: "clarify",
+        reply: "PRYSM runs require an explicit branch and full 40-character SHA. Use: run prysm <branch> <full-sha> <tranche> :: <objective>."
+      };
+    }
     return {
       kind: "proposal",
       proposal: {
@@ -538,8 +554,9 @@ export function helpText(): string {
     "status sandbox",
     "details [run-id]",
     "stop [run-id]",
-    "run <prysm|gacm|sandbox> <tranche> :: <objective>",
-    "continue <tranche> :: <objective>",
+    "run <gacm|sandbox> <tranche> :: <objective>",
+    "run prysm <branch> <full-sha> <tranche> :: <objective>",
+    "continue <tranche> :: <objective> (PRYSM requires branch + full SHA)",
     "publish sandbox :: <commit message>",
     "",
     "You can also speak normally. Free text is converted into a canonical command and shown to you first. Mutating actions require YES before execution."
@@ -700,11 +717,12 @@ export async function handleCommand(
       return { reply: "Format: run <prysm|gacm|sandbox> <tranche> :: <objective>" };
     }
     const project = match[1].toLowerCase() as ProjectKey;
-    const bounded = splitBoundedInstruction(match[2]);
+    const targeted = project === "prysm" ? parsePrysmTargetedInstruction(match[2]) : null;
+    const bounded = targeted || splitBoundedInstruction(match[2]);
     if (!bounded) {
-      return { reply: "Format: run <prysm|gacm|sandbox> <tranche> :: <objective>" };
+      return { reply: project === "prysm" ? "Format: run prysm <branch> <full-sha> <tranche> :: <objective>" : "Format: run <gacm|sandbox> <tranche> :: <objective>" };
     }
-    const run = await deps.startCodexRun(project, bounded.objective, bounded.tranche);
+    const run = await deps.startCodexRun(project, bounded.objective, bounded.tranche, undefined, targeted ? { branch: targeted.branch, sha: targeted.sha } : undefined);
     const nextState = { ...state, lastRunId: run.runId, lastProject: project };
     return {
       reply: [
@@ -722,11 +740,12 @@ export async function handleCommand(
     if (!state.lastProject) {
       return { reply: "No prior project context. Use run <prysm|gacm|sandbox> <tranche> :: <objective>." };
     }
-    const bounded = splitBoundedInstruction(rest);
+    const targeted = state.lastProject === "prysm" ? parsePrysmTargetedInstruction(rest) : null;
+    const bounded = targeted || splitBoundedInstruction(rest);
     if (!bounded) {
-      return { reply: "Format: continue <tranche> :: <objective>" };
+      return { reply: state.lastProject === "prysm" ? "Format: continue <branch> <full-sha> <tranche> :: <objective>" : "Format: continue <tranche> :: <objective>" };
     }
-    const run = await deps.startCodexRun(state.lastProject, bounded.objective, bounded.tranche);
+    const run = await deps.startCodexRun(state.lastProject, bounded.objective, bounded.tranche, undefined, targeted ? { branch: targeted.branch, sha: targeted.sha } : undefined);
     const nextState = { ...state, lastRunId: run.runId };
     return {
       reply: [
