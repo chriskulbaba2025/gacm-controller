@@ -20,6 +20,26 @@ export type ContractRunState = "RUNNING" | "COMPLETE" | "BLOCKED" | "FAILED" | "
 export type TerminalEvidence = "NONE" | "PROOF_PRESENT";
 export type ProductAcceptance = "HOLD";
 
+export type RunStatusDiagnostic =
+  | "HISTORICAL_SOURCE_MISMATCH"
+  | "UNAVAILABLE"
+  | "CORRUPTED"
+  | "UNVERIFIED";
+
+export class RunStatusReadError extends Error {
+  readonly diagnostic: RunStatusDiagnostic;
+  readonly runId: string;
+  readonly reason: string;
+
+  constructor(diagnostic: RunStatusDiagnostic, runId: string, reason: string) {
+    super(reason);
+    this.name = "RunStatusReadError";
+    this.diagnostic = diagnostic;
+    this.runId = runId;
+    this.reason = reason;
+  }
+}
+
 export interface StatusContractContext {
   controllerSource: ControllerSourceIdentity;
   runId: string;
@@ -336,7 +356,7 @@ export async function readPersistedRunStatus(
   const sqlitePath = path.join(path.dirname(statusPath), SQLITE_FILENAME);
   if (await pathIsPresent(sqlitePath)) return readSqliteStatus(sqlitePath, context);
   if (await pathIsPresent(statusPath)) return readLegacyJsonStatus(statusPath, context);
-  throw new Error("Persisted run status is unavailable.");
+  throw new RunStatusReadError("UNAVAILABLE", context.runId, "Persisted run status is unavailable.");
 }
 
 async function pathIsPresent(target: string): Promise<boolean> {
@@ -370,7 +390,13 @@ async function readSqliteStatus(sqlitePath: string, context: StatusContractConte
     try { parsed = JSON.parse(row.payload); } catch { throw new Error("SQLite status payload is corrupted JSON."); }
     return validateRunStatus(parsed, context);
   } catch (error) {
-    throw new Error(`Persisted SQLite status is invalid or unreadable: ${error instanceof Error ? error.message : String(error)}`);
+    const reason = error instanceof Error ? error.message : String(error);
+    const diagnostic = /controller source identity is stale or mismatched/i.test(reason)
+      ? "HISTORICAL_SOURCE_MISMATCH"
+      : /missing or corrupted|corrupted JSON|invalid or unreadable|not in WAL|not a database|schema|configuration/i.test(reason)
+        ? "CORRUPTED"
+        : "UNVERIFIED";
+    throw new RunStatusReadError(diagnostic, context.runId, `Persisted SQLite status is invalid or unreadable: ${reason}`);
   } finally {
     try { db?.close(); } catch {}
   }
@@ -382,9 +408,9 @@ async function readLegacyJsonStatus(statusPath: string, context: StatusContractC
     raw = await readFile(statusPath, "utf8");
   } catch (error) {
     if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
-      throw new Error("Persisted run status is unavailable.");
+      throw new RunStatusReadError("UNAVAILABLE", context.runId, "Persisted run status is unavailable.");
     }
-    throw new Error(`Persisted run status is unreadable: ${error instanceof Error ? error.message : String(error)}`);
+    throw new RunStatusReadError("UNVERIFIED", context.runId, `Persisted run status is unreadable: ${error instanceof Error ? error.message : String(error)}`);
   }
   let parsed: unknown;
   try {
@@ -395,7 +421,11 @@ async function readLegacyJsonStatus(statusPath: string, context: StatusContractC
   try {
     return validateRunStatus(parsed, context);
   } catch (error) {
-    throw new Error(`Persisted run status is invalid: ${error instanceof Error ? error.message : String(error)}`);
+    const reason = error instanceof Error ? error.message : String(error);
+    const diagnostic = /controller source identity is stale or mismatched/i.test(reason)
+      ? "HISTORICAL_SOURCE_MISMATCH"
+      : /JSON|corrupted/i.test(reason) ? "CORRUPTED" : "UNVERIFIED";
+    throw new RunStatusReadError(diagnostic, context.runId, `Persisted run status is invalid: ${reason}`);
   }
 }
 

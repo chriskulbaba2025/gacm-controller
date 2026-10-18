@@ -10,6 +10,7 @@ import {
   sendManualNotification,
   startCodexRun
 } from "./core.js";
+import { RunStatusReadError } from "./status-contract.js";
 import type { ProjectKey } from "./config.js";
 import { interpretWithLlm, type LlmIntent } from "./llm-interpreter.js";
 
@@ -632,8 +633,17 @@ export async function handleCommand(
             `Latest run: ${run.status.runId}`,
             `Run state: ${run.status.state}`
           );
-        } catch {
-          lines.push(`Latest run: ${state.lastRunId}`, "Run state: unavailable");
+        } catch (error) {
+          if (error instanceof RunStatusReadError) {
+            const label = error.diagnostic === "HISTORICAL_SOURCE_MISMATCH"
+              ? "historical status unavailable (UNVERIFIED)"
+              : error.diagnostic === "UNAVAILABLE"
+                ? "unavailable (UNAVAILABLE)"
+                : `${error.diagnostic.toLowerCase()} (UNVERIFIED)`;
+            lines.push(`Latest run: ${error.runId}`, `Run state: ${label}`, `Diagnostic: ${error.reason}`);
+          } else {
+            lines.push(`Latest run: ${state.lastRunId}`, "Run state: unavailable");
+          }
         }
       }
 

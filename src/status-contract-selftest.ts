@@ -7,6 +7,7 @@ import {
   CONTROLLER_REPOSITORY_REMOTE,
   persistRunStatus,
   readPersistedRunStatus,
+  RunStatusReadError,
   type ControllerSourceIdentity,
   type StatusContractContext
 } from "./status-contract.js";
@@ -214,7 +215,10 @@ async function main() {
     const corruptPath = path.join(root, "corrupt", "status.json");
     await mkdir(path.dirname(corruptPath), { recursive: true });
     await writeFile(path.join(path.dirname(corruptPath), "status.sqlite"), "not a sqlite database", "utf8");
-    await assert.rejects(readPersistedRunStatus(corruptPath, context), /SQLite status.*invalid or unreadable/);
+    await assert.rejects(
+      readPersistedRunStatus(corruptPath, context),
+      (error: unknown) => error instanceof RunStatusReadError && error.diagnostic === "CORRUPTED"
+    );
     await assert.rejects(persistRunStatus(corruptPath, running, context), /SQLite status persistence failed/);
 
     const uncertainPath = path.join(root, "uncertain", "status.json");
@@ -233,7 +237,9 @@ async function main() {
         ...context,
         controllerSource: { ...source, sha: "abcdefabcdefabcdefabcdefabcdefabcdefabcd" }
       }),
-      /stale or mismatched/
+      (error: unknown) => error instanceof RunStatusReadError &&
+        error.diagnostic === "HISTORICAL_SOURCE_MISMATCH" && error.runId === runId &&
+        /stale or mismatched/.test(error.reason)
     );
 
     await assert.rejects(

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { handleCommand, type ControllerDeps, type ControllerState } from "./telegram-controller.js";
+import { RunStatusReadError } from "./status-contract.js";
 
 const calls: Array<Record<string, unknown>> = [];
 const baseStatus = {
@@ -422,6 +423,21 @@ async function main() {
   );
   assert.match(naturalRunning.reply, /GACM/);
   assert.match(naturalRunning.reply, /Run state: COMPLETE/);
+
+  const historicalStatus = await handleCommand(
+    "status gacm",
+    { ...screenshotState, lastProject: "gacm" },
+    { ...deps, getCodexTail: async () => {
+      throw new RunStatusReadError(
+        "HISTORICAL_SOURCE_MISMATCH",
+        "gacm-historical-run",
+        "Persisted controller source identity is stale or mismatched."
+      );
+    } }
+  );
+  assert.match(historicalStatus.reply, /Latest run: gacm-historical-run/);
+  assert.match(historicalStatus.reply, /historical status unavailable \(UNVERIFIED\)/);
+  assert.match(historicalStatus.reply, /stale or mismatched/);
 
   const status = await handleCommand("status", state, deps);
   assert.match(status.reply, /PRYSM:/);
