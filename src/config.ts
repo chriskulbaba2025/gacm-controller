@@ -51,7 +51,7 @@ export const PROJECTS: Record<ProjectKey, ProjectConfig> = {
     root: "C:\\g\\p001",
     expectedRemote: "https://github.com/chriskulbaba2025/prysm-staging-isolated.git",
     authoritativeRef: "repair/prysm-evidence-accuracy-20261013",
-    authoritativeSha: "e863e35c47c62c883d54d7a62f038e559de27cd0",
+    authoritativeSha: "e1b4bf7fbc77b78cafe5a352c8c8cfe745c02541",
     allowDetachedHead: true,
     proofRoot: "C:\\Users\\kulba\\Downloads\\PRYSM-MCP-RUNS",
     executionRoot: "C:\\g\\p"
