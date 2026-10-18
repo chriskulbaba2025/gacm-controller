@@ -47,6 +47,11 @@ const activeProcesses = new Map<string, ChildProcess>();
 const cancelledRuns = new Set<string>();
 let activeRunId: string | null = null;
 
+/** Test-only observation; production callers do not use this. */
+export function getStartCodexRunTestState(): { activeRunId: string | null; activeProcessCount: number } {
+  return { activeRunId, activeProcessCount: activeProcesses.size };
+}
+
 export type RunState = "RUNNING" | "COMPLETE" | "BLOCKED" | "FAILED" | "CANCELLED";
 
 export function classifyGovernedResult(
@@ -549,6 +554,19 @@ async function writeRunStatus(status: RunStatus): Promise<void> {
   });
 }
 
+/** Test-only dependency seam. Omitted in production, preserving the normal launch path. */
+export interface StartCodexRunTestOverrides {
+  spawn?: (...args: Parameters<typeof spawn>) => ChildProcess;
+  persistRunStatus?: (status: RunStatus) => Promise<void>;
+}
+
+function persistStatus(status: RunStatus, override?: (status: RunStatus) => Promise<void>): Promise<void> {
+  if (override) {
+    return override(status);
+  }
+  return writeRunStatus(status);
+}
+
 async function sendWebhook(
   event: string,
   payload: Record<string, unknown>
@@ -673,7 +691,8 @@ export async function startCodexRun(
   objective: string,
   tranche: string,
   gacmRole?: GacmRepositoryRole,
-  prysmAuthorization?: PrysmRunAuthorization
+  prysmAuthorization?: PrysmRunAuthorization,
+  testOverrides?: StartCodexRunTestOverrides
 ): Promise<RunStatus> {
   const controllerSource = await getControllerSourceIdentity();
   if (activeRunId) {
@@ -816,7 +835,7 @@ export async function startCodexRun(
     authority: await getStatusAuthorityContext(status.project)
   });
 
-  const child = spawn(process.execPath, [CODEX_CLI_JS, ...args], {
+  const child = (testOverrides?.spawn || spawn)(process.execPath, [CODEX_CLI_JS, ...args], {
     cwd: workspace.binding.workspacePath,
     windowsHide: true,
     stdio: ["pipe", "pipe", "pipe"]
@@ -842,7 +861,7 @@ export async function startCodexRun(
     status.state = "FAILED";
     status.finishedAt = new Date().toISOString();
     status.notification = "SUPPRESSED";
-    await writeRunStatus(status);
+    await persistStatus(status, testOverrides?.persistRunStatus);
     throw new Error(`Codex launch failed: ${launchError.message}`);
   }
 
@@ -913,7 +932,7 @@ export async function startCodexRun(
       message: `ERROR: Codex run failed. Proof: ${proofDir}`,
       proofDir
     });
-    await writeRunStatus(status);
+    await persistStatus(status, testOverrides?.persistRunStatus);
     if (activeRunId === runId) activeRunId = null;
     activeProcesses.delete(runId);
     stdoutStream.end();
@@ -922,8 +941,10 @@ export async function startCodexRun(
 
   // Codex waits on stdin. Do not release the task before SQLite commits.
   try {
-    await writeRunStatus(status);
+    await persistStatus(status, testOverrides?.persistRunStatus);
   } catch (error) {
+    // Prevent the forced termination close event from publishing a second, misleading terminal status.
+    terminalHandled = true;
     let stopped = !child.pid;
     try {
       if (child.pid) {
@@ -1047,7 +1068,7 @@ export async function startCodexRun(
     } else {
       status.notification = "SUPPRESSED";
     }
-    await writeRunStatus(status);
+    await persistStatus(status, testOverrides?.persistRunStatus);
     if (activeRunId === runId) activeRunId = null;
     activeProcesses.delete(runId);
     cancelledRuns.delete(runId);
