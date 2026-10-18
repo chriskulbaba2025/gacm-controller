@@ -3,7 +3,7 @@ import { PROJECTS } from "./config.js";
 import { getProjectStatus, assertAcceptedPrysmRun } from "./core.js";
 
 async function verify() {
-  const expected = "5381eca7a42ae55d436bf351e0fe98bb42deaa89";
+  const expected = "bda9578029fda428e227bae774defb2e6c9a9809";
   const cfg = PROJECTS.prysm;
 
   assert.equal(cfg.authoritativeSha, expected);
