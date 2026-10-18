@@ -68,6 +68,7 @@ const WorkspaceAuthoritySchema = z.object({
   authoritativeRef: z.string().min(1),
   authoritativeSha: ShaSchema,
   executionRoot: z.string().min(1),
+  existingWorkspaceOnly: z.boolean().optional(),
   isolatedClone: z.boolean().optional()
 }).strict();
 

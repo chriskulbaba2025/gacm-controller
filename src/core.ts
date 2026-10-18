@@ -794,7 +794,7 @@ export async function startCodexRun(
     "-c", "sandbox_workspace_write.network_access=false",
     "--add-dir", proofDir,
     "--output-last-message", finalPath,
-    prompt
+    "-"
   ];
 
   await stat(CODEX_CLI_JS);
@@ -804,10 +804,22 @@ export async function startCodexRun(
   // directory can substitute for the verified binding here.
   await verifyExecutionWorkspaceForLaunch(workspace.binding, workspaceAuthority, gitAtRoot);
 
+  // Pre-launch validation only; no RUNNING status is persisted here.
+  // The hypothetical active-process context validates the proposed record.
+  const { validateRunStatus } = await import("./status-contract.js");
+  validateRunStatus(status, {
+    controllerSource: await getControllerSourceIdentity(),
+    runId: status.runId,
+    project: status.project,
+    proofDir: status.proofDir,
+    activeProcess: true,
+    authority: await getStatusAuthorityContext(status.project)
+  });
+
   const child = spawn(process.execPath, [CODEX_CLI_JS, ...args], {
     cwd: workspace.binding.workspacePath,
     windowsHide: true,
-    stdio: ["ignore", "pipe", "pipe"]
+    stdio: ["pipe", "pipe", "pipe"]
   });
 
   const launchError = await new Promise<Error | null>((resolve) => {
@@ -908,7 +920,33 @@ export async function startCodexRun(
     stderrStream.end();
   });
 
-  await writeRunStatus(status);
+  // Codex waits on stdin. Do not release the task before SQLite commits.
+  try {
+    await writeRunStatus(status);
+  } catch (error) {
+    let stopped = !child.pid;
+    try {
+      if (child.pid) {
+        await execFile("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
+          windowsHide: true, timeout: 10_000
+        });
+        stopped = true;
+      } else {
+        stopped = child.kill();
+      }
+    } catch {
+      stopped = child.kill();
+    }
+    child.stdin?.destroy();
+    if (activeRunId === runId) activeRunId = null;
+    activeProcesses.delete(runId);
+    stdoutStream.end();
+    stderrStream.end();
+    if (!stopped) {
+      throw new Error(`CRITICAL HOLD: status persistence failed and PID ${child.pid} termination is unverified: ${String(error)}`);
+    }
+    throw new Error(`Codex prompt withheld because SQLite persistence failed: ${String(error)}`);
+  }
 
   child.on("close", async (code) => {
     if (terminalHandled) return;
@@ -1014,6 +1052,14 @@ export async function startCodexRun(
     activeProcesses.delete(runId);
     cancelledRuns.delete(runId);
   });
+
+  // The child now has durable status and terminal listeners.
+  if (!child.stdin || child.stdin.destroyed || child.exitCode !== null) {
+    child.kill();
+    throw new Error("Codex prompt withheld: child stdin unavailable after status persistence.");
+  }
+  child.stdin.on("error", () => { child.kill(); });
+  child.stdin.end(prompt);
 
   return status;
 }

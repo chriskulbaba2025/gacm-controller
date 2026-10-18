@@ -37,7 +37,8 @@ async function main() {
       expectedRemote: "https://github.com/example/prysm.git",
       authoritativeRef: "main",
       authoritativeSha: sha,
-      executionRoot: root
+      executionRoot: root,
+      existingWorkspaceOnly: true
     };
     const workspaceBinding = {
       version: 2 as const,
