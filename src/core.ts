@@ -634,6 +634,7 @@ HARD CONSTRAINTS:
 - Preserve unrelated existing changes. The pre-run working tree dirty state is: ${pre.dirty}.
 - Maximum three failed repairs in the same defect family; then stop and report the reset requirement.
 - Use targeted tests during repair. Do not run broad regression unless the objective explicitly requires it.
+- For compatible Node built-in tests, use normal test isolation by default. If the exact targeted command fails before test execution with Node \`spawn EPERM\`, retry that same command with \`--test-isolation=none\` as an execution-compatibility fallback only. Do not use this fallback for other failures, do not silently reduce coverage, and report PASS only when the tests themselves exit 0.
 - For PRYSM: reach a verifiable source edit or completed targeted check promptly; if no meaningful action is emitted inside the controller early-progress window, it stops the run with BLOCKED, not PASS.
 - Missing evidence is not negative evidence. Preserve PASS / FAIL / HOLD and UNKNOWN / PARTIAL / UNAVAILABLE semantics.
 - No network-dependent shell actions.
