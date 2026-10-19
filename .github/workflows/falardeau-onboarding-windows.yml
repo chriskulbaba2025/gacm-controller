@@ -22,11 +22,13 @@ jobs:
     timeout-minutes: 15
     env:
       CI: "true"
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: Checkout exact PR source without persisted credentials
         uses: actions/checkout@v4
         with:
           persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Setup Node 22
         uses: actions/setup-node@v4
         with:
@@ -38,7 +40,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           $sha = (git rev-parse HEAD).Trim()
           $dirty = git status --porcelain
-          if ($sha -ne $env:GITHUB_SHA) { throw "Wrong checkout SHA: $sha" }
+          if ($sha -ne $env:SOURCE_SHA) { throw "Wrong checkout SHA: $sha" }
           if ($dirty) { throw "Working tree was not clean before tests" }
           Write-Host "RUNNING_EXACT_SHA=$sha"
       - name: Install lockfile dependencies
@@ -47,8 +49,8 @@ jobs:
         run: npm run typecheck
       - name: Falardeau dormant authority negative controls
         run: npm run falardeau:authority:selftest
-      - name: Existing GACM authority regression
-        run: npm run gacm:authority:selftest
+      - name: Existing GACM role contract — offline fixture
+        run: npm run gacm:authority:offline:selftest
       - name: Workspace isolation and identity regression
         run: npm run workspace:selftest
       - name: Telegram parsing and confirmation regression
@@ -64,6 +66,7 @@ jobs:
           Write-Host "SOURCE_CLEAN_POST_TEST=PASS"
 
 # Deliberately omitted:
-# npm run selftest — depends on local PRYSM/GACM/sandbox checkouts.
+# npm run selftest and npm run gacm:authority:selftest — depend on distinct local
+# PRYSM/GACM/sandbox checkouts and remain a separate Windows runtime gate.
 # Telegram live integration and Codex — require separately authorized runtime proof.
 # No merge, push, deploy, production actions, secrets or paid model calls.
