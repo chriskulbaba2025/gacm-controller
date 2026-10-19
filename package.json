@@ -14,7 +14,8 @@
     "telegram:selftest": "tsx src/telegram-selftest.ts",
     "telegram:locktest": "tsx src/telegram-lock-selftest.ts",
     "result:selftest": "tsx src/result-selftest.ts",
-    "telegram:validate": "tsx src/telegram-validate.ts"
+    "telegram:validate": "tsx src/telegram-validate.ts",
+    "falardeau:authority:selftest": "tsx src/falardeau-authority-selftest.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.3.0",
