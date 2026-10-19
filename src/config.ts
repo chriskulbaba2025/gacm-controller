@@ -1,7 +1,7 @@
 import "dotenv/config";
 import path from "node:path";
 
-export type ProjectKey = "prysm" | "gacm" | "sandbox";
+export type ProjectKey = "prysm" | "gacm" | "sandbox" | "falardeau";
 export type GacmRepositoryRole = "GACM_GOVERNANCE" | "GACM_APPLICATION";
 
 export interface ProjectConfig {
@@ -62,6 +62,17 @@ export const PROJECTS: Record<ProjectKey, ProjectConfig> = {
     expectedRemote: "https://github.com/chriskulbaba2025/gacm-trial.git",
     proofRoot: "C:\\Users\\kulba\\Downloads\\GACM-MCP-RUNS",
     executionRoot: "C:\\Users\\kulba\\Downloads\\GACM-MCP-EXECUTION-WORKSPACES"
+  },
+  falardeau: {
+    key: "falardeau",
+    // NOT ACTIVATED. This separate Astro app repo does not yet exist/has no accepted SHA.
+    // Do not use the frozen WordPress source repository as the execution target.
+    root: "C:\\Users\\kulba\\Desktop\\falardeau-astro-sanity",
+    expectedRemote: "https://github.com/chriskulbaba2025/falardeau-astro-sanity.git",
+    authoritativeRef: "main",
+    // authoritativeSha intentionally absent: every Falardeau run must fail closed until pinned.
+    proofRoot: "C:\\Users\\kulba\\Downloads\\FALARDEAU-GACM-RUNS",
+    executionRoot: "C:\\Users\\kulba\\Downloads\\FALARDEAU-GACM-EXECUTION-WORKSPACES"
   },
   sandbox: {
     key: "sandbox",

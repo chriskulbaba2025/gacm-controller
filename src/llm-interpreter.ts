@@ -8,7 +8,7 @@ import { CODEX_CLI_JS, CODEX_MODEL } from "./config.js";
 import type { ProjectKey } from "./config.js";
 
 const IntentSchema = z.object({
-  project: z.enum(["prysm", "gacm", "sandbox"]).nullable(),
+  project: z.enum(["prysm", "gacm", "sandbox", "falardeau"]).nullable(),
   action: z.enum(["status", "details", "run", "stop", "publish", "clarify"]),
   tranche: z.string().max(64).nullable(),
   objective: z.string().max(3000).nullable(),
@@ -43,7 +43,7 @@ function buildPrompt(
     "Do not execute commands, use tools, browse, inspect files, or make changes.",
     "Your only job is to classify the user's message into the supplied JSON schema.",
     "",
-    "Allowed projects: prysm, gacm, sandbox.",
+    "Allowed projects: prysm, gacm, sandbox, falardeau. Falardeau execution is dormant without an accepted Astro SHA.",
     "Allowed actions: status, details, run, stop, publish, clarify.",
     "",
     "Rules:",
@@ -53,7 +53,7 @@ function buildPrompt(
     "- details means read-only latest-run/result inspection, including 'did it work?' or 'what happened?'.",
     "- run means a governed mutating/verification task that must later be confirmed by the user.",
     "- stop means stop/cancel a specific or current run and must later be confirmed.",
-    "- publish is allowed only for sandbox. Never classify PRYSM or GACM as publish.",
+    "- publish is allowed only for sandbox. Never classify PRYSM, GACM or Falardeau as publish.",
     "- If the project, target, or requested action is materially ambiguous, return action=clarify.",
     "- Never infer deploy, production mutation, branch switching, merge, push, reset, stash, or deletion authority.",
     "- For run, preserve user restrictions in objective. Use a short tranche label if obvious; otherwise null.",

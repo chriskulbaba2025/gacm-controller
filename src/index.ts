@@ -13,7 +13,7 @@ import {
   webhookState
 } from "./core.js";
 
-const ProjectSchema = z.enum(["prysm", "gacm", "sandbox"]);
+const ProjectSchema = z.enum(["prysm", "gacm", "sandbox", "falardeau"]);
 
 function asText(value: unknown) {
   return {
@@ -33,7 +33,7 @@ function createServer(): McpServer {
     { name: "prysm-gacm-governed-execution", version: "0.1.0" },
     {
       instructions:
-        "Use only for governed PRYSM and GACM work. Production is read-only. " +
+        "Use only for governed authorized projects. Falardeau remains dormant until pinned. Production is read-only. " +
         "Do not broaden project, model, tranche, or scope. One Codex run at a time."
     }
   );
@@ -41,7 +41,7 @@ function createServer(): McpServer {
   server.registerTool(
     "project_status",
     {
-      description: "Return exact Git identity and dirty state for the authorized PRYSM or GACM repo.",
+      description: "Return exact Git identity and dirty state for the authorized project.",
       inputSchema: z.object({ project: ProjectSchema })
     },
     async ({ project }) => {
@@ -53,7 +53,7 @@ function createServer(): McpServer {
   server.registerTool(
     "read_project_file",
     {
-      description: "Read one text file inside the authorized PRYSM or GACM repo. Absolute paths and path escapes are rejected.",
+      description: "Read one text file inside the authorized project. Absolute paths and path escapes are rejected.",
       inputSchema: z.object({
         project: ProjectSchema,
         relativePath: z.string().min(1),
@@ -90,7 +90,7 @@ function createServer(): McpServer {
     "run_codex",
     {
       description:
-        "Start one governed Codex repair/update run in PRYSM or GACM. " +
+        "Start one governed Codex run in an authorized project. Falardeau requires an approved SHA pin. " +
         "Uses the fixed configured model, workspace-write sandbox, no shell network, no commit/push/deploy, and a dedicated proof folder.",
       inputSchema: z.object({
         project: ProjectSchema,
@@ -98,15 +98,27 @@ function createServer(): McpServer {
         objective: z.string().min(1).max(12_000),
         gacmRole: z.enum(["GACM_GOVERNANCE", "GACM_APPLICATION"]).optional(),
         prysmBranch: z.string().min(1).max(240).optional(),
-        prysmSha: z.string().regex(/^[0-9a-f]{40}$/i).optional()
+        prysmSha: z.string().regex(/^[0-9a-f]{40}$/i).optional(),
+        falardeauBranch: z.string().min(1).max(240).optional(),
+        falardeauSha: z.string().regex(/^[0-9a-f]{40}$/i).optional()
       })
     },
-    async ({ project, tranche, objective, gacmRole, prysmBranch, prysmSha }) => {
+    async ({ project, tranche, objective, gacmRole, prysmBranch, prysmSha, falardeauBranch, falardeauSha }) => {
       try {
         if ((prysmBranch && !prysmSha) || (!prysmBranch && prysmSha)) {
           throw new Error("PRYSM branch and full SHA must be supplied together.");
         }
-        return asText(await startCodexRun(project, objective, tranche, gacmRole, project === "prysm" ? { branch: prysmBranch!, sha: prysmSha! } : undefined));
+        if ((falardeauBranch && !falardeauSha) || (!falardeauBranch && falardeauSha)) {
+          throw new Error("Falardeau branch and full SHA must be supplied together.");
+        }
+        if (project !== "prysm" && (prysmBranch || prysmSha)) throw new Error("PRYSM authority cannot be used for another project.");
+        if (project !== "falardeau" && (falardeauBranch || falardeauSha)) throw new Error("Falardeau authority cannot be used for another project.");
+        const authorization = project === "prysm"
+          ? prysmBranch && prysmSha ? { branch: prysmBranch, sha: prysmSha } : undefined
+          : project === "falardeau"
+            ? falardeauBranch && falardeauSha ? { branch: falardeauBranch, sha: falardeauSha } : undefined
+            : undefined;
+        return asText(await startCodexRun(project, objective, tranche, gacmRole, authorization));
       }
       catch (error) { return asError(error); }
     }

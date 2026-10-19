@@ -447,6 +447,24 @@ async function main() {
   const sandboxStatus = await handleCommand("status sandbox", state, deps);
   assert.match(sandboxStatus.reply, /SANDBOX/);
 
+  const falardeauRunBefore = calls.filter((x) => x.fn === "run" && x.project === "falardeau").length;
+  const falardeauMissingSha = await handleCommand("run falardeau FAL-01 :: inspect staged WordPress parity", state, deps);
+  assert.match(falardeauMissingSha.reply, /Format: run falardeau <branch> <full-sha>/);
+  assert.equal(calls.filter((x) => x.fn === "run" && x.project === "falardeau").length, falardeauRunBefore);
+  const falardeauRead = await handleCommand("status falardeau", state, deps);
+  assert.match(falardeauRead.reply, /FALARDEAU/);
+  const falardeauSha = "0123456789abcdef0123456789abcdef01234567";
+  const falardeauRun = await handleCommand(`run falardeau main ${falardeauSha} FAL-01 :: inspect read-only staging parity`, state, deps);
+  assert.equal(falardeauRun.state?.lastProject, "falardeau");
+  assert.deepEqual(calls.find((x) => x.fn === "run" && x.project === "falardeau"), {
+    fn: "run", project: "falardeau", objective: "inspect read-only staging parity", tranche: "FAL-01",
+    prysmAuthorization: { branch: "main", sha: falardeauSha }
+  });
+  const falardeauFollowNoSha = await handleCommand("continue FAL-02 :: continue", falardeauRun.state!, deps);
+  assert.match(falardeauFollowNoSha.reply, /Format: continue <branch> <full-sha>/);
+  const falardeauPublish = await handleCommand("publish falardeau :: forbidden", falardeauRun.state!, deps);
+  assert.match(falardeauPublish.reply, /Format:/);
+
   const badRun = await handleCommand("run prysm just do it", state, deps);
   assert.match(badRun.reply, /Format:/);
 

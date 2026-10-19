@@ -58,7 +58,7 @@ const RUNTIME_DIR = path.resolve(process.cwd(), "runtime");
 const STATE_PATH = path.join(RUNTIME_DIR, "telegram-controller-state.json");
 
 function isProject(value: string): value is ProjectKey {
-  return value === "prysm" || value === "gacm" || value === "sandbox";
+  return value === "prysm" || value === "gacm" || value === "sandbox" || value === "falardeau";
 }
 
 function normalizeCommand(text: string): string {
@@ -74,7 +74,7 @@ function splitBoundedInstruction(body: string): { tranche: string; objective: st
   return { tranche, objective };
 }
 
-function parsePrysmTargetedInstruction(body: string): { branch: string; sha: string; tranche: string; objective: string } | null {
+function parseShaTargetedInstruction(body: string): { branch: string; sha: string; tranche: string; objective: string } | null {
   const match = body.match(/^(\S+)\s+([0-9a-f]{40})\s+([\s\S]+)$/i);
   if (!match) return null;
   const bounded = splitBoundedInstruction(match[3]);
@@ -131,7 +131,7 @@ function normalizeNaturalText(text: string): string {
 
 function explicitProjectFromText(text: string): ProjectKey | null {
   const normalized = normalizeNaturalText(text);
-  const matches = (["prysm", "gacm", "sandbox"] as const).filter((project) =>
+  const matches = (["prysm", "gacm", "sandbox", "falardeau"] as const).filter((project) =>
     new RegExp(`\\b${project}\\b`, "i").test(normalized)
   );
   return matches.length === 1 ? matches[0] : null;
@@ -296,7 +296,7 @@ export function interpretNaturalLanguage(
     if (!project) {
       return {
         kind: "clarify",
-        reply: "Which project should I clean: PRYSM, GACM, or sandbox?"
+        reply: "Which project should I clean: PRYSM, GACM, sandbox, or Falardeau?"
       };
     }
 
@@ -348,13 +348,13 @@ export function interpretNaturalLanguage(
     if (!project) {
       return {
         kind: "clarify",
-        reply: "Which project should I apply that to: PRYSM, GACM, or sandbox?"
+        reply: "Which project should I apply that to: PRYSM, GACM, sandbox, or Falardeau?"
       };
     }
 
     const tranche = deriveTrancheLabel(sourceText);
-    if (project === "prysm") {
-      return { kind: "clarify", reply: "PRYSM runs require an explicit branch and full 40-character SHA. Use: run prysm <branch> <full-sha> <tranche> :: <objective>." };
+    if (project === "prysm" || project === "falardeau") {
+      return { kind: "clarify", reply: `${project.toUpperCase()} runs require an explicit branch and full 40-character SHA. Use: run ${project} <branch> <full-sha> <tranche> :: <objective>.` };
     }
     return {
       kind: "proposal",
@@ -379,7 +379,7 @@ export function interpretNaturalLanguage(
   return {
     kind: "clarify",
     reply:
-      "I could not safely turn that into a governed action. Mention PRYSM, GACM, or sandbox and tell me what you want to check, change, run, stop, or verify.",
+      "I could not safely turn that into a governed action. Mention PRYSM, GACM, sandbox, or Falardeau and tell me what you want to check, change, run, stop, or verify.",
     allowLlmFallback: true
   };
 }
@@ -403,6 +403,7 @@ function projectFromRunId(runId: string): ProjectKey | null {
   if (runId.startsWith("prysm-")) return "prysm";
   if (runId.startsWith("gacm-")) return "gacm";
   if (runId.startsWith("sandbox-")) return "sandbox";
+  if (runId.startsWith("falardeau-")) return "falardeau";
   return null;
 }
 
@@ -471,7 +472,7 @@ function interpretationFromLlm(
     if (!runProject) {
       return {
         kind: "clarify",
-        reply: "That run ID is not one of the governed PRYSM, GACM, or sandbox run IDs."
+        reply: "That run ID is not one of the governed PRYSM, GACM, sandbox, or Falardeau run IDs."
       };
     }
 
@@ -517,15 +518,15 @@ function interpretationFromLlm(
     if (!intent.project) {
       return {
         kind: "clarify",
-        reply: "Which project should I apply that to: PRYSM, GACM, or sandbox?"
+        reply: "Which project should I apply that to: PRYSM, GACM, sandbox, or Falardeau?"
       };
     }
 
     const tranche = sanitizeTranche(intent.tranche, sourceText);
-    if (intent.project === "prysm") {
+    if (intent.project === "prysm" || intent.project === "falardeau") {
       return {
         kind: "clarify",
-        reply: "PRYSM runs require an explicit branch and full 40-character SHA. Use: run prysm <branch> <full-sha> <tranche> :: <objective>."
+        reply: `${intent.project.toUpperCase()} runs require an explicit branch and full 40-character SHA. Use: run ${intent.project} <branch> <full-sha> <tranche> :: <objective>.`
       };
     }
     return {
@@ -554,11 +555,13 @@ export function helpText(): string {
     "status prysm",
     "status gacm",
     "status sandbox",
+    "status falardeau",
     "details [run-id]",
     "stop [run-id]",
     "run <gacm|sandbox> <tranche> :: <objective>",
     "run prysm <branch> <full-sha> <tranche> :: <objective>",
-    "continue <tranche> :: <objective> (PRYSM requires branch + full SHA)",
+    "run falardeau <branch> <full-sha> <tranche> :: <objective>",
+    "continue <tranche> :: <objective> (PRYSM and Falardeau require branch + full SHA)",
     "publish sandbox :: <commit message>",
     "",
     "You can also speak normally. Free text is converted into a canonical command and shown to you first. Mutating actions require YES before execution."
@@ -611,7 +614,7 @@ export async function handleCommand(
   if (verb === "status") {
     if (rest) {
       const project = rest.toLowerCase();
-      if (!isProject(project)) return { reply: "Unknown project. Use prysm, gacm, or sandbox." };
+      if (!isProject(project)) return { reply: "Unknown project. Use prysm, gacm, sandbox, or falardeau." };
       const s = await deps.getProjectStatus(project);
       const lines = [
         project.toUpperCase(),
@@ -712,7 +715,7 @@ export async function handleCommand(
       return { reply: `Stop requested for ${runId}. Current state: ${stopped.state}.` };
     }
 
-    const explicitRunId = /^(?:prysm|gacm|sandbox)-[A-Za-z0-9._-]+$/.test(rest);
+    const explicitRunId = /^(?:prysm|gacm|sandbox|falardeau)-[A-Za-z0-9._-]+$/.test(rest);
     if (explicitRunId) {
       const stopped = await deps.cancelCodexRun(rest);
       return { reply: `Stop requested for ${rest}. Current state: ${stopped.state}.` };
@@ -723,15 +726,15 @@ export async function handleCommand(
   }
 
   if (verb === "run") {
-    const match = rest.match(/^(prysm|gacm|sandbox)\s+([\s\S]+)$/i);
+    const match = rest.match(/^(prysm|gacm|sandbox|falardeau)\s+([\s\S]+)$/i);
     if (!match) {
-      return { reply: "Format: run <prysm|gacm|sandbox> <tranche> :: <objective>" };
+      return { reply: "Format: run <prysm|gacm|sandbox|falardeau> <tranche> :: <objective>" };
     }
     const project = match[1].toLowerCase() as ProjectKey;
-    const targeted = project === "prysm" ? parsePrysmTargetedInstruction(match[2]) : null;
-    const bounded = targeted || splitBoundedInstruction(match[2]);
+    const targeted = project === "prysm" || project === "falardeau" ? parseShaTargetedInstruction(match[2]) : null;
+    const bounded = targeted || (project !== "falardeau" ? splitBoundedInstruction(match[2]) : null);
     if (!bounded) {
-      return { reply: project === "prysm" ? "Format: run prysm <branch> <full-sha> <tranche> :: <objective>" : "Format: run <gacm|sandbox> <tranche> :: <objective>" };
+      return { reply: project === "prysm" || project === "falardeau" ? `Format: run ${project} <branch> <full-sha> <tranche> :: <objective>` : "Format: run <gacm|sandbox> <tranche> :: <objective>" };
     }
     const run = await deps.startCodexRun(project, bounded.objective, bounded.tranche, undefined, targeted ? { branch: targeted.branch, sha: targeted.sha } : undefined);
     const nextState = { ...state, lastRunId: run.runId, lastProject: project };
@@ -749,12 +752,12 @@ export async function handleCommand(
 
   if (verb === "continue") {
     if (!state.lastProject) {
-      return { reply: "No prior project context. Use run <prysm|gacm|sandbox> <tranche> :: <objective>." };
+      return { reply: "No prior project context. Use run <prysm|gacm|sandbox|falardeau> <tranche> :: <objective>." };
     }
-    const targeted = state.lastProject === "prysm" ? parsePrysmTargetedInstruction(rest) : null;
-    const bounded = targeted || splitBoundedInstruction(rest);
+    const targeted = state.lastProject === "prysm" || state.lastProject === "falardeau" ? parseShaTargetedInstruction(rest) : null;
+    const bounded = targeted || (state.lastProject !== "falardeau" ? splitBoundedInstruction(rest) : null);
     if (!bounded) {
-      return { reply: state.lastProject === "prysm" ? "Format: continue <branch> <full-sha> <tranche> :: <objective>" : "Format: continue <tranche> :: <objective>" };
+      return { reply: state.lastProject === "prysm" || state.lastProject === "falardeau" ? "Format: continue <branch> <full-sha> <tranche> :: <objective>" : "Format: continue <tranche> :: <objective>" };
     }
     const run = await deps.startCodexRun(state.lastProject, bounded.objective, bounded.tranche, undefined, targeted ? { branch: targeted.branch, sha: targeted.sha } : undefined);
     const nextState = { ...state, lastRunId: run.runId };
@@ -872,7 +875,7 @@ function parseControllerState(value: unknown): ControllerState {
     throw new Error("Invalid Telegram controller state offset/initialization");
   }
   if (s.lastRunId !== undefined &&
-      (typeof s.lastRunId !== "string" || !/^(prysm|gacm|sandbox)-[A-Za-z0-9._-]+$/.test(s.lastRunId))) {
+      (typeof s.lastRunId !== "string" || !/^(prysm|gacm|sandbox|falardeau)-[A-Za-z0-9._-]+$/.test(s.lastRunId))) {
     throw new Error("Invalid Telegram controller last run identity");
   }
   if (s.lastProject !== undefined && !isProject(String(s.lastProject))) {

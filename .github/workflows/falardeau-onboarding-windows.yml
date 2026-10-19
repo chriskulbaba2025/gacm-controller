@@ -1,0 +1,72 @@
+name: Falardeau GACM onboarding Windows checks
+
+on:
+  push:
+    branches:
+      - feature/falardeau-gacm-onboarding-20261019
+  pull_request:
+    branches:
+      - c1/status-integrity-20261014
+
+permissions:
+  contents: read
+
+concurrency:
+  group: falardeau-gacm-onboarding-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  targeted-controller-regressions:
+    name: Isolated Windows / Node 22 / no activation
+    runs-on: windows-latest
+    timeout-minutes: 15
+    env:
+      CI: "true"
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact PR source without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Verify exact checked-out Git identity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $sha = (git rev-parse HEAD).Trim()
+          $dirty = git status --porcelain
+          if ($sha -ne $env:SOURCE_SHA) { throw "Wrong checkout SHA: $sha" }
+          if ($dirty) { throw "Working tree was not clean before tests" }
+          Write-Host "RUNNING_EXACT_SHA=$sha"
+      - name: Install lockfile dependencies
+        run: npm ci --no-audit --no-fund
+      - name: TypeScript compile proof
+        run: npm run typecheck
+      - name: Falardeau dormant authority negative controls
+        run: npm run falardeau:authority:selftest
+      - name: Existing GACM role contract — offline fixture
+        run: npm run gacm:authority:offline:selftest
+      - name: Workspace isolation and identity regression
+        run: npm run workspace:selftest
+      - name: Telegram parsing and confirmation regression
+        run: npm run telegram:selftest
+      - name: Terminal-result classification regression
+        run: npm run result:selftest
+      - name: Verify no test source edits
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $dirty = git status --porcelain --untracked-files=all
+          if ($dirty) { throw "Tests modified tracked or untracked source: $dirty" }
+          Write-Host "SOURCE_CLEAN_POST_TEST=PASS"
+
+# Deliberately omitted:
+# npm run selftest and npm run gacm:authority:selftest — depend on distinct local
+# PRYSM/GACM/sandbox checkouts and remain a separate Windows runtime gate.
+# Telegram live integration and Codex — require separately authorized runtime proof.
+# No merge, push, deploy, production actions, secrets or paid model calls.

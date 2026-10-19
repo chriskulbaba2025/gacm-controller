@@ -8,13 +8,15 @@
     "typecheck": "tsc --noEmit",
     "selftest": "tsx src/selftest.ts",
     "gacm:authority:selftest": "tsx src/gacm-authority-selftest.ts",
+    "gacm:authority:offline:selftest": "tsx src/gacm-authority-offline-selftest.ts",
     "workspace:selftest": "tsx src/workspace-bootstrap-selftest.ts",
     "workspace:resolve": "tsx src/manual-workspace.ts",
     "telegram": "tsx src/telegram-main.ts",
     "telegram:selftest": "tsx src/telegram-selftest.ts",
     "telegram:locktest": "tsx src/telegram-lock-selftest.ts",
     "result:selftest": "tsx src/result-selftest.ts",
-    "telegram:validate": "tsx src/telegram-validate.ts"
+    "telegram:validate": "tsx src/telegram-validate.ts",
+    "falardeau:authority:selftest": "tsx src/falardeau-authority-selftest.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.3.0",
