@@ -561,7 +561,7 @@ export function helpText(): string {
     "run <gacm|sandbox> <tranche> :: <objective>",
     "run prysm <branch> <full-sha> <tranche> :: <objective>",
     "run falardeau <branch> <full-sha> <tranche> :: <objective>",
-    "continue <tranche> :: <objective> (PRYSM requires branch + full SHA)",
+    "continue <tranche> :: <objective> (PRYSM and Falardeau require branch + full SHA)",
     "publish sandbox :: <commit message>",
     "",
     "You can also speak normally. Free text is converted into a canonical command and shown to you first. Mutating actions require YES before execution."
