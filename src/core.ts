@@ -41,6 +41,7 @@ import {
 } from "./status-contract.js";
 
 import { evaluateProgressGate, parseProgressEvent, type StopReason } from "./progress-guard.js";
+import { assertAcceptedFalardeauRun } from "./falardeau-authority.js";
 
 const execFile = promisify(execFileCb);
 const activeProcesses = new Map<string, ChildProcess>();
@@ -535,7 +536,9 @@ function runPathFromId(runId: string): { project: ProjectKey; proofDir: string }
     ? "prysm"
     : runId.startsWith("gacm-")
       ? "gacm"
-      : runId.startsWith("sandbox-")
+      : runId.startsWith("falardeau-")
+        ? "falardeau"
+        : runId.startsWith("sandbox-")
         ? "sandbox"
         : (() => { throw new Error("Invalid run ID."); })();
   return { project, proofDir: path.join(PROJECTS[project].proofRoot, runId) };
@@ -719,10 +722,26 @@ export async function startCodexRun(
       throw new Error("PRYSM runs require an explicit branch and full 40-character commit SHA.");
     }
   }
+  // Falardeau is deliberately dormant until an Astro repo, accepted SHA and local checkout exist.
+  // Block before attempting any workspace/proof side effects.
+  if (project === "falardeau") {
+    const pinned = projectConfig("falardeau");
+    if (!pinned.authoritativeRef || !pinned.authoritativeSha) {
+      throw new Error("Falardeau NOT ACTIVATED: exact Astro application SHA is not yet accepted/pinned.");
+    }
+    if (!prysmAuthorization || !/^[A-Za-z0-9._/-]+$/.test(prysmAuthorization.branch) ||
+        !/^[0-9a-f]{40}$/i.test(prysmAuthorization.sha)) {
+      throw new Error("Falardeau runs require an explicit accepted branch and full 40-character SHA.");
+    }
+  }
   const sourcePre = project === "gacm"
     ? (authority![resolvedRole!.role === "GACM_GOVERNANCE" ? "governance" : "application"].status as RepoStatus)
     : await getProjectStatus(project);
   const cfg = projectConfig(project);
+  if (project === "falardeau") {
+    assertAcceptedFalardeauRun(cfg, prysmAuthorization, sourcePre, CODEX_MODEL);
+    await stat(CODEX_CLI_JS);
+  }
   if (project === "prysm") {
     assertAcceptedPrysmRun(prysmAuthorization, sourcePre);
     // An unavailable CLI must fail before workspace or proof side effects.
@@ -741,7 +760,7 @@ export async function startCodexRun(
     authoritativeRef: resolvedRole?.repository.authoritativeRef || prysmAuthorization?.branch || sourcePre.branch,
     authoritativeSha: resolvedRole?.repository.authoritativeSha || prysmAuthorization?.sha || sourcePre.sha,
     executionRoot: cfg.executionRoot,
-    existingWorkspaceOnly: project === "prysm",
+    existingWorkspaceOnly: project === "prysm" || project === "falardeau",
     isolatedClone: false
   };
   if (!workspaceAuthority.authoritativeRef) {
