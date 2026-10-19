@@ -15,7 +15,7 @@ export interface ControllerSourceIdentity {
   clean: true;
 }
 
-export type ContractProject = "prysm" | "gacm" | "sandbox";
+export type ContractProject = "prysm" | "gacm" | "sandbox" | "falardeau";
 export type ContractRunState = "RUNNING" | "COMPLETE" | "BLOCKED" | "FAILED" | "CANCELLED";
 export type TerminalEvidence = "NONE" | "PROOF_PRESENT";
 export type ProductAcceptance = "HOLD";
@@ -108,7 +108,7 @@ const WorkspaceBindingSchema = z.object({
 }).strict();
 
 const RepoStatusSchema = z.object({
-  project: z.enum(["prysm", "gacm", "sandbox"]),
+  project: z.enum(["prysm", "gacm", "sandbox", "falardeau"]),
   root: z.string().min(1),
   topLevel: z.string().min(1),
   remote: z.string().min(1),
@@ -142,8 +142,8 @@ const AuthoritySetSchema = z.object({
 const RunStatusSchema = z.object({
   version: z.literal(1),
   controllerSource: SourceIdentitySchema,
-  runId: z.string().regex(/^(prysm|gacm|sandbox)-[A-Za-z0-9._-]+$/),
-  project: z.enum(["prysm", "gacm", "sandbox"]),
+  runId: z.string().regex(/^(prysm|gacm|sandbox|falardeau)-[A-Za-z0-9._-]+$/),
+  project: z.enum(["prysm", "gacm", "sandbox", "falardeau"]),
   tranche: z.string().min(1).max(120),
   objective: z.string().min(1).max(12_000),
   model: z.string().min(1),
