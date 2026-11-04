@@ -17,6 +17,7 @@
     "telegram:selftest": "tsx src/telegram-selftest.ts",
     "telegram:locktest": "tsx src/telegram-lock-selftest.ts",
     "result:selftest": "tsx src/result-selftest.ts",
+    "expert:preflight:selftest": "tsx src/expert-preflight-selftest.ts",
     "telegram:validate": "tsx src/telegram-validate.ts"
   },
   "dependencies": {
