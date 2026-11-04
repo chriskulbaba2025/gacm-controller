@@ -109,3 +109,7 @@ The protocol test verifies tool discovery, repo status access, path-escape rejec
 ## ChatGPT connection
 
 ChatGPT cannot directly reach a local stdio MCP. Connect it through an approved remote MCP endpoint or OpenAI Secure MCP Tunnel. Do not expose the local server publicly merely to make it reachable.
+
+## Expert pre-execution prompt quality gate
+
+The governed execution prompt builder (`src/core.ts`) now carries a bounded expert review: missing professional checks, authoritative original sources, established methods, objective independent acceptance, and risks. The review cannot add authorized work, change models/provider/cost/tranche/production rules, or create extra model calls. `npm run expert:preflight:selftest` checks actual rendered prompt instructions for GACM, PRYSM and sandbox. Prompts must record the preflight status and exact evidence in `PROOF.md`; REVIEWED alone is not PASS. This GitHub candidate does not prove that the installed local controller uses the new source SHA. Installed runtime and exact-SHA acceptance remain NOT_VERIFIED.
