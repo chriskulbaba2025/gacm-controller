@@ -543,7 +543,7 @@ export async function sendManualNotification(
   return { state, forwardedEvent };
 }
 
-function governedPrompt(
+export function governedPrompt(
   project: ProjectKey,
   objective: string,
   tranche: string,
@@ -574,6 +574,18 @@ HARD CONSTRAINTS:
 - Write proof to: ${path.join(proofDir, "PROOF.md")}
 - Proof must include pre-run SHA, files changed, tests actually run with results, final SHA, remaining blockers, and whether production was untouched.
 - Never claim PASS, done, staging-ready, production-ready, or release-ready without the required proof.
+
+MANDATORY EXPERT PREFLIGHT (once before material actions, for substantive governed tasks):
+1. Expert omissions: identify checks a qualified specialist would make that the user did not request; treat them as observations, not extra authorized work.
+2. Raw source: read current primary authority (files, original records, evidence, official documentation), bound to current repository/ref/SHA as relevant; do not substitute memory or summaries.
+3. Established method: diagnose root cause, owning boundary, dependencies and blast radius; prefer current native or proven tools/patterns before custom implementation, within existing tool/network authority.
+4. Independent verification: identify exact tests or other independent evidence that would prove the originally authorized outcome, not executor self-certification.
+5. Risks: name material failure modes, missing evidence, conflicts, external effects and limits.
+Keep objective, scope, model, provider, cost, retries, tranche, production and approvals frozen. Never turn observations into scope changes, new model calls or another tranche. Reuse existing verified evidence; no redundant analysis.
+In PROOF.md record EXPERT_PREFLIGHT: REVIEWED | HOLD | NOT_APPLICABLE | NOT_VERIFIED, and SOURCE_OF_TRUTH, EXPERT_OMISSIONS, RAW_EVIDENCE, METHOD, ACCEPTANCE, RISKS, SCOPE_CHANGE.
+REVIEWED proves only that the review was recorded; it is not acceptance PASS. If current authority or material proof is unavailable or the proposed method requires new authority, HOLD before editing or calling a provider.
+For a trivial read-only/status operation, use NOT_APPLICABLE, with a concise reason; never block useful simple responses on an irrelevant review.
+
 ${prysmBrowserGuardPrompt(project)}
 
 PRE-RUN:
