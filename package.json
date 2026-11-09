@@ -18,7 +18,8 @@
     "telegram:locktest": "tsx src/telegram-lock-selftest.ts",
     "result:selftest": "tsx src/result-selftest.ts",
     "telegram:validate": "tsx src/telegram-validate.ts",
-    "batch:selftest": "tsx --test src/batch-selftest.ts"
+    "batch:selftest": "tsx --test src/batch-selftest.ts",
+    "batch:live:selftest": "tsx --test src/batch-live-selftest.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.3.0",
