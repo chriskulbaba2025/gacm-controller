@@ -6,6 +6,7 @@ import path from 'node:path';
 import {BatchCoordinator,JsonBatchStateStore,canonical,type BatchAdapters,type BatchPlan,type BatchState,
   type Candidate,type FrozenTranche,type ExecutionReceipt,type VerificationReceipt} from './batch-coordinator.js';
 import {acquireExecutionLock} from './execution-lock.js';
+import {ActionGate,recipeDigest,validateRecipe,type Recipe} from './batch-action-gate.js';
 import {CODEX_CLI_JS,PROJECTS,projectConfig,type ProjectKey} from './config.js';
 import {reconcileExecutionWorkspace,type WorkspaceBinding} from './workspace-bootstrap.js';
 const sha=(s:string|Buffer)=>createHash('sha256').update(s).digest('hex');
@@ -79,6 +80,8 @@ class LiveAdapters implements BatchAdapters{
  private before=new Map<string,Record<string,string>>();
  private contracts=new Map<string,CheckContract>();
  private failure=new Map<string,string>();
+ private recipes=new Map<string,Recipe>();
+ private gates=new Map<string,ActionGate>();
  constructor(private plan:BatchPlan,private proof:string,private contractRoot:string){}
  verifyApproval(p:BatchPlan,d:string){return verifyBatchApproval(p,d);}
  private async contract(t:FrozenTranche){
@@ -86,6 +89,14 @@ class LiveAdapters implements BatchAdapters{
   const x=JSON.parse(await readFile(path.join(this.contractRoot,t.id+'.json'),'utf8')) as CheckContract;
   checkContract(x);if(sha(canonical(x))!==t.verificationContractDigest)throw Error('CHECK_CONTRACT_DRIFT');
   this.contracts.set(t.id,x);return x;
+ }
+ private async loadRecipe(t:FrozenTranche){
+  const dir=process.env.GACM_BATCH_RECIPE_DIR;
+  if(!safeId.test(t.id)||!dir)throw Error('EXECUTION_RECIPE_NOT_CONNECTED');
+  const r=JSON.parse(await readFile(path.join(dir,t.id+'.json'),'utf8')) as Recipe;
+  validateRecipe(r,t.id);
+  if(recipeDigest(r)!==t.executionRecipeDigest||r.steps.length!==2)throw Error('EXECUTION_RECIPE_DIGEST_OR_SEQUENCE_DRIFT');
+  this.recipes.set(t.id,r);return r;
  }
  private async identity(){
   if(!this.binding)throw Error('NO_BATCH_WORKTREE');
@@ -110,7 +121,7 @@ class LiveAdapters implements BatchAdapters{
   await this.identity();
   const auth=await cmd(process.execPath,[CODEX_CLI_JS,'login','status'],this.worktree,30000);
   if(auth.code||!/Logged in using ChatGPT/i.test(auth.stdout+'\n'+auth.stderr))throw Error('SUBSCRIPTION_AUTH_NOT_VERIFIED');
-  for(const t of p.tranches)await this.contract(t);
+  for(const t of p.tranches){await this.contract(t);await this.loadRecipe(t);}
   const current=await snapshot(this.worktree,p.startSha);
   if(s.lastCandidate&&(s.lastCandidate.workspaceId!==this.worktree||s.lastCandidate.changeDigest!==current.digest))
     throw Error('CANDIDATE_CHANGED_ON_CONTINUATION');
@@ -119,6 +130,12 @@ class LiveAdapters implements BatchAdapters{
   await this.identity();
   const initial=await snapshot(this.worktree,p.startSha);
   const runId=p.batchId+'-'+t.id+'-'+attempt;
+  const recipe=this.recipes.get(t.id);if(!recipe)throw Error('RECIPE_MISSING');
+  const gate=new ActionGate(recipe,t.id);
+  const step=gate.currentStep.step_id,action=runId+'-codex';
+  gate.authorize({action_id:action,step_id:step,action_kind:'CODEX_EXECUTE',tool:'codex-cli',
+   target:p.repository,parameters:{tranche:t.id,model:p.model,effort:p.reasoningEffort,attempt}});
+  this.gates.set(runId,gate);
   this.before.set(runId,initial.hashes);
   const finalFile=path.join(this.proof,runId+'-final.txt');
   const prompt=['GACM frozen batch '+p.batchId+' tranche '+t.id+' attempt '+attempt+'.',
@@ -135,6 +152,7 @@ class LiveAdapters implements BatchAdapters{
   const candidate=await snapshot(this.worktree,p.startSha);
   const finalText=await readFile(finalFile,'utf8').catch(()=>'');
   const blocked=r.code!==0||/(?:^|\n)RESULT:\s*(?:\n)?\s*(?:HOLD|BLOCKED|FAIL)/i.test(finalText);
+  if(!blocked)gate.recordResult(action,'EXECUTED',[path.join(this.proof,runId+'-codex.log')]);
   return {runId,candidate:{workspaceId:this.worktree,sourceSha:p.startSha,changeDigest:candidate.digest,changedPaths:candidate.names},
     model:p.model,effort:p.reasoningEffort,status:blocked?'BLOCKED':'EXECUTED',
     failureReason:blocked?'EXECUTOR_EXIT_OR_HOLD_'+r.code:undefined};
@@ -163,7 +181,17 @@ class LiveAdapters implements BatchAdapters{
  }
  async verify(p:BatchPlan,t:FrozenTranche,r:ExecutionReceipt):Promise<VerificationReceipt>{
   if((await snapshot(this.worktree,p.startSha)).digest!==r.candidate.changeDigest)throw Error('PRE_VERIFICATION_DRIFT');
+  const gate=this.gates.get(r.runId);if(!gate)throw Error('ACTION_GATE_MISSING');
+  const step=gate.currentStep.step_id,action=r.runId+'-verifier';
+  gate.authorize({action_id:action,step_id:step,action_kind:'INDEPENDENT_VERIFY',tool:'gacm-local-verifier',
+   target:p.repository,parameters:{tranche:t.id,contractDigest:t.verificationContractDigest,
+    candidateDigest:r.candidate.changeDigest}});
   const x=await this.checks(t);
+  gate.recordResult(action,'VERIFIED',x.refs);
+  await writeFile(path.join(this.proof,r.runId+'-action-authority.json'),
+   JSON.stringify({recipeDigest:recipeDigest(gate.recipe),state:gate.authorityState,
+    decisions:gate.decisions,transitions:gate.transitions})+'\n');
+  if(gate.authorityState!=='VERIFICATION')throw Error('RECIPE_NOT_VERIFIED');
   if(x.status!=='PASS')this.failure.set(t.id,x.family+':'+x.reason);
   return {status:x.status,issuerRole:'INDEPENDENT_VERIFIER',runId:r.runId,changeDigest:r.candidate.changeDigest,
    contractDigest:t.verificationContractDigest,evidenceRefs:x.refs,defectFamily:x.family,reason:x.reason};
