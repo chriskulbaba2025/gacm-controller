@@ -15,7 +15,7 @@ function plan(n=3):BatchPlan {
   model:'gpt-5.6-luna',reasoningEffort:'medium',maxExecutions:8,maxDurationSeconds:600,maxProviderSpendUsd:0,
   permitsProductionMutation:false,permitsPushMergeDeployPublish:false,permitsSubagents:false,
   tranches:Array.from({length:n},(_,i)=>({id:'T'+(i+1),objective:'Tranche '+(i+1),
-   verificationContractDigest:String(i+1).repeat(64),allowedPaths:['src/**'],forbiddenPaths:['.env'],
+   verificationContractDigest:String(i+1).repeat(64),executionRecipeDigest:'f'.repeat(64),allowedPaths:['src/**'],forbiddenPaths:['.env'],
    maxAttempts:3})),approval:{approverId:'owner',authorityRecord:'human-approval-1',frozenDigest:''}};
  p.approval.frozenDigest=frozenDigest(p);return p;
 }
