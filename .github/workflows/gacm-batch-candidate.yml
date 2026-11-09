@@ -1,0 +1,32 @@
+name: GACM batch candidate checks
+on:
+  push:
+    branches:
+      - feature/gacm-batches-c1-reconciled-20261108
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  candidate:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck
+      - run: npm run batch:selftest
+      - run: npm run batch:live:selftest
+      - run: npm run batch:status -- sandbox missing-batch
+      - run: npm run result:selftest
+      - run: npm run workspace:selftest
+      - run: npm run telegram:selftest
+      - run: npx tsx src/status-contract-selftest.ts
+      - run: npx tsx src/integrated-launch-selftest.ts
