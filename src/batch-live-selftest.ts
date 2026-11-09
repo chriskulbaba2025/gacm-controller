@@ -1,7 +1,7 @@
 /** Actual live-adapter sandbox integration with simulated, zero-provider Codex. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,mkdir,readFile,rm,writeFile} from 'node:fs/promises';
+import {mkdtemp,mkdir,readdir,readFile,rm,writeFile} from 'node:fs/promises';
 import os from 'node:os';import path from 'node:path';
 import {spawn} from 'node:child_process';
 import {createHash,generateKeyPairSync,sign} from 'node:crypto';
@@ -102,6 +102,10 @@ test('real adapter runs signed 3-tranche local Git batch, failed audit then repa
  const signature=sign(null,Buffer.from(canonical(record)),privateKey).toString('base64');
  await writeFile(path.join(approvalDir,plan.approval.authorityRecord+'.json'),JSON.stringify({...record,signature}));
  const state=await runApprovedBatch(plan as any);
+ if(state.phase!=='COMPLETE'){
+   const files=(await readdir(path.join(proof,'BATCH-'+plan.batchId))).filter(x=>x.startsWith('verify-'));
+   for(const file of files.slice(0,2))console.log('BATCH_VERIFIER_DIAGNOSTIC',await readFile(path.join(proof,'BATCH-'+plan.batchId,file),'utf8'));
+ }
  assert.equal(state.phase,'COMPLETE',state.reason || 'NO_REASON');
  assert.equal(state.executionCount,4);
  assert.deepEqual(state.accepted.map(x=>x.trancheId),['T1','T2','T3']);
