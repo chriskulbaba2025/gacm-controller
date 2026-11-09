@@ -1,7 +1,7 @@
 /** GACM opt-in live adapters. Requires signed human approval, verified subscription and exact test contracts. */
 import {createHash,createPublicKey,verify as verifySig} from 'node:crypto';
 import {spawn} from 'node:child_process';
-import {mkdir,lstat,readFile,writeFile} from 'node:fs/promises';
+import {mkdir,lstat,readFile,stat,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {BatchCoordinator,JsonBatchStateStore,canonical,type BatchAdapters,type BatchPlan,type BatchState,
   type Candidate,type FrozenTranche,type ExecutionReceipt,type VerificationReceipt} from './batch-coordinator.js';
@@ -23,6 +23,17 @@ async function cmd(exe:string,args:string[],cwd:string,timeoutMs=120000){
   child.once('close',n=>{clearTimeout(timer);resolve({code:n??-1,stdout:Buffer.concat(out).toString('utf8'),
     stderr:Buffer.concat(err).toString('utf8')});});
  });
+}
+async function resolveNpmCliOnWindows():Promise<string>{
+ const candidates=[process.env.npm_execpath||'',
+   path.join(path.dirname(process.execPath),'node_modules','npm','bin','npm-cli.js')];
+ for(const candidate of candidates){
+  if(!candidate)continue;
+  try{if((await stat(candidate)).isFile())return candidate;}catch(e){
+   if((e as NodeJS.ErrnoException).code!=='ENOENT')throw e;
+  }
+ }
+ throw Error('NPM_CLI_NOT_FOUND_FOR_WINDOWS_VERIFIER');
 }
 async function git(cwd:string,...args:string[]){
  const r=await cmd('git',['-C',cwd,...args],cwd,30000);
@@ -191,7 +202,10 @@ class LiveAdapters implements BatchAdapters{
   const refs:string[]=[];
   for(const c of contract.checks){
    const before=await snapshot(this.worktree,this.plan.startSha);
-   const r=await cmd(c.executable,c.args,this.worktree,c.timeoutSeconds*1000).catch(e=>({code:-1,stdout:'',stderr:String(e)}));
+   const exe=process.platform==='win32'&&c.executable==='npm'?process.execPath:c.executable;
+   const args=process.platform==='win32'&&c.executable==='npm'?
+    [await resolveNpmCliOnWindows(),...c.args]:c.args;
+   const r=await cmd(exe,args,this.worktree,c.timeoutSeconds*1000).catch(e=>({code:-1,stdout:'',stderr:String(e)}));
    const after=await snapshot(this.worktree,this.plan.startSha);
    const ref=path.join(this.proof,'verify-'+t.id+'-'+c.id+'-'+Date.now()+'.json');
    await writeFile(ref,JSON.stringify({check:c,code:r.code,stdout:r.stdout,stderr:r.stderr,candidate:before.digest,after:after.digest})+'\n');
