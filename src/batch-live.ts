@@ -8,7 +8,7 @@ import {BatchCoordinator,JsonBatchStateStore,canonical,type BatchAdapters,type B
 import {acquireExecutionLock} from './execution-lock.js';
 import {ActionGate,recipeDigest,validateRecipe,type Recipe} from './batch-action-gate.js';
 import {CODEX_CLI_JS,PROJECTS,projectConfig,type ProjectKey} from './config.js';
-import {reconcileExecutionWorkspace,type WorkspaceBinding} from './workspace-bootstrap.js';
+import {reconcileExecutionWorkspace,workspaceBindingPath,type WorkspaceBinding} from './workspace-bootstrap.js';
 const sha=(s:string|Buffer)=>createHash('sha256').update(s).digest('hex');
 const safeId=/^[A-Za-z0-9._-]{1,120}$/;
 const sameRemote=(a:string,b:string)=>a.trim().replace(/\.git$/i,'').toLowerCase()===b.trim().replace(/\.git$/i,'').toLowerCase();
@@ -112,11 +112,33 @@ class LiveAdapters implements BatchAdapters{
     throw Error('UNAPPROVED_PROJECT_OR_REMOTE');
   if(!this.binding){
    const cfg=projectConfig(project);
-   const a={runId:'batch-'+p.batchId,trancheId:p.batchId,repositoryRole:project.toUpperCase()+'_PROJECT',
-    repositoryRoot:cfg.root,repositoryIdentity:p.repository,expectedRemote:p.repository,
-    authoritativeRef:p.approvedBranch,authoritativeSha:p.startSha,executionRoot:cfg.executionRoot};
-   const x=await reconcileExecutionWorkspace(a,async(cwd:string,args:string[])=>git(cwd,...args));
-   this.binding=x.binding;this.worktree=x.binding.workspacePath;
+   if(s.lastCandidate){
+    // Persisted accepted/failed candidate must resume in the same dirty worktree.
+    // Never reset/stash it or bootstrap a clean replacement after a restart.
+    const workspace=path.resolve(s.lastCandidate.workspaceId);
+    const execRoot=path.resolve(cfg.executionRoot);
+    const norm=(v:string)=>path.resolve(v).replaceAll('\\','/').replace(/\\/$/,'').toLowerCase();
+    if(!norm(workspace).startsWith(norm(execRoot)+'/'))throw Error('PERSISTED_WORKTREE_OUTSIDE_EXECUTION_ROOT');
+    const persisted=JSON.parse(await readFile(workspaceBindingPath(workspace),'utf8')) as WorkspaceBinding;
+    if(persisted.version!==2||persisted.runId!=='batch-'+p.batchId||
+      persisted.trancheId!==p.batchId||persisted.repositoryRole!==project.toUpperCase()+'_PROJECT'||
+      !sameRemote(persisted.expectedRemote,p.repository)||
+      persisted.authoritativeRef!==p.approvedBranch||persisted.authoritativeSha!==p.startSha||
+      norm(persisted.workspacePath)!==norm(workspace)||norm(persisted.repositoryRoot)!==norm(cfg.root))
+      throw Error('PERSISTED_WORKTREE_BINDING_DRIFT');
+    const [sourceCommon,worktreeCommon]=await Promise.all([
+      git(cfg.root,'rev-parse','--path-format=absolute','--git-common-dir'),
+      git(workspace,'rev-parse','--path-format=absolute','--git-common-dir')
+    ]);
+    if(norm(sourceCommon)!==norm(worktreeCommon))throw Error('PERSISTED_WORKTREE_GIT_IDENTITY_DRIFT');
+    this.binding=persisted;this.worktree=workspace;
+   }else{
+    const a={runId:'batch-'+p.batchId,trancheId:p.batchId,repositoryRole:project.toUpperCase()+'_PROJECT',
+     repositoryRoot:cfg.root,repositoryIdentity:p.repository,expectedRemote:p.repository,
+     authoritativeRef:p.approvedBranch,authoritativeSha:p.startSha,executionRoot:cfg.executionRoot};
+    const x=await reconcileExecutionWorkspace(a,async(cwd:string,args:string[])=>git(cwd,...args));
+    this.binding=x.binding;this.worktree=x.binding.workspacePath;
+   }
   }
   await this.identity();
   const auth=await cmd(process.execPath,[CODEX_CLI_JS,'login','status'],this.worktree,30000);
