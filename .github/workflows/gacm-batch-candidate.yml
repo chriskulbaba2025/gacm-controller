@@ -19,4 +19,5 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run typecheck
       - run: npm run batch:selftest
+      - run: npm run batch:live:selftest
       - run: npm run result:selftest
