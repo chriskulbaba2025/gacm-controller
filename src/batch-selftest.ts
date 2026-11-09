@@ -8,6 +8,8 @@ import {generateKeyPairSync,sign} from 'node:crypto';
 import {BatchCoordinator,JsonBatchStateStore,canonical,frozenDigest,type BatchPlan,
  type BatchAdapters,type Candidate,type BatchState} from './batch-coordinator.js';
 import {verifyBatchApproval} from './batch-live.js';
+import {ActionGate,recipeDigest,type Recipe} from './batch-action-gate.js';
+
 function plan(n=3):BatchPlan {
  const p:BatchPlan={schema:'GACM_PREAPPROVED_SEQUENTIAL_BATCH_V1',batchId:'unit-batch',
   project:'gacm',repository:'https://github.com/owner/repo.git',
@@ -94,4 +96,46 @@ test('missing signature cannot approve and valid Ed25519 signature can',async()=
  await writeFile(path.join(root,p.approval.authorityRecord+'.json'),JSON.stringify(bad));
  assert.equal((await verifyBatchApproval(p,digest)).status,'HOLD');
  delete process.env.GACM_BATCH_APPROVAL_DIR;delete process.env.GACM_BATCH_APPROVER_PUBLIC_KEY;
+});
+
+
+test('per-action recipe authorizes only exact frozen action and ordered transitions',()=>{
+ const p=plan(2);const rules=(kind:string,tool:string,params:string[])=>[{
+  action_kind:kind,tools:[tool],target_patterns:[p.repository],
+  parameter_constraints:{allowed_keys:params,required_keys:params,exact:{tranche:'T1'}},judgment_slot_id:null
+ }];
+ const recipe:Recipe={schema:'GACM_EXECUTION_RECIPE_V1',recipe_id:'recipe-T1',version:'1',
+  state:'FROZEN',work_unit_id:'T1',mutation_policy:'GOVERNED_REFREEZE_REQUIRED',
+  steps:[{step_id:'exec',sequence:1,allowed_actions:rules('CODEX_EXECUTE','codex-cli',['tranche']),
+    bounded_judgment_slots:[],acceptable_prior_states:['EXECUTION'],expected_result_states:['EXECUTED'],
+    evidence_requirements:['codex-log'],stop_conditions:['authority-drift']},
+   {step_id:'verify',sequence:2,allowed_actions:rules('INDEPENDENT_VERIFY','gacm-local-verifier',['tranche']),
+    bounded_judgment_slots:[],acceptable_prior_states:['EXECUTION'],expected_result_states:['VERIFIED'],
+    evidence_requirements:['verifier-log'],stop_conditions:['evidence-drift']}]};
+ assert.match(recipeDigest(recipe),/^[a-f0-9]{64}$/);
+ const gate=new ActionGate(recipe,'T1');
+ const exec={action_id:'a1',step_id:'exec',action_kind:'CODEX_EXECUTE',tool:'codex-cli',
+   target:p.repository,parameters:{tranche:'T1'}};
+ assert.equal(gate.authorize(exec),'ALLOW');
+ gate.recordResult('a1','EXECUTED',['log']);
+ assert.equal(gate.currentStep.step_id,'verify');
+ const v={...exec,action_id:'a2',step_id:'verify',action_kind:'INDEPENDENT_VERIFY',
+  tool:'gacm-local-verifier'};
+ assert.equal(gate.authorize(v),'ALLOW');
+ gate.recordResult('a2','VERIFIED',['test-log']);
+ assert.equal(gate.authorityState,'VERIFICATION');
+ assert.throws(()=>gate.authorize(exec),/ACTION_AUTHORITY_DENIED/);
+});
+test('per-action gate denies unapproved action before execution',()=>{
+ const r:Recipe={schema:'GACM_EXECUTION_RECIPE_V1',recipe_id:'gate',version:'1',state:'FROZEN',
+ work_unit_id:'T1',mutation_policy:'GOVERNED_REFREEZE_REQUIRED',steps:[{
+ step_id:'run',sequence:1,bounded_judgment_slots:[],acceptable_prior_states:['EXECUTION'],
+ expected_result_states:['EXECUTED'],evidence_requirements:['log'],stop_conditions:['stop'],
+ allowed_actions:[{action_kind:'CODEX_EXECUTE',tools:['codex-cli'],target_patterns:['repo'],
+ parameter_constraints:{allowed_keys:['tranche'],required_keys:['tranche'],exact:{tranche:'T1'}},
+ judgment_slot_id:null}]}]};
+ const gate=new ActionGate(r,'T1');
+ assert.throws(()=>gate.authorize({action_id:'bad',step_id:'run',action_kind:'DEPLOY',tool:'vercel',
+ target:'production',parameters:{tranche:'T1'}}),/ACTION_AUTHORITY_DENIED/);
+ assert.equal(gate.authorityState,'BLOCKED');
 });
