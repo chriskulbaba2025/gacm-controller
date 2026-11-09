@@ -120,7 +120,7 @@ test('real adapter runs signed 3-tranche local Git batch, failed audit then repa
  delete checkpoint.attempts.T3;
  await rm(path.join(worktree,'src','T3.txt'));
  await writeFile(path.join(proof,'BATCH-'+plan.batchId,'state',plan.batchId+'.json'),
-   canonical(checkpoint)+'\\n');
+   canonical(checkpoint));
  const resumed=await runApprovedBatch(plan as any);
  assert.equal(resumed.phase,'COMPLETE',resumed.reason||'resume must complete');
  assert.equal(resumed.executionCount,4,'resumed batch must not replay accepted T1/T2');
