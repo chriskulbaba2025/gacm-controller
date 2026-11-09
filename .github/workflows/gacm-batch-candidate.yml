@@ -1,0 +1,22 @@
+name: GACM batch candidate checks
+on:
+  push:
+    branches:
+      - feature/gacm-preapproved-batches-20261108
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck
+      - run: npm run batch:selftest
+      - run: npm run result:selftest
