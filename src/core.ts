@@ -41,6 +41,7 @@ import {
 } from "./status-contract.js";
 
 import { evaluateProgressGate, parseProgressEvent, type StopReason } from "./progress-guard.js";
+import { acquireExecutionLock } from "./execution-lock.js";
 
 const execFile = promisify(execFileCb);
 const activeProcesses = new Map<string, ChildProcess>();
@@ -807,6 +808,7 @@ export async function startCodexRun(
     ...(project === "prysm" ? ["--json"] : []),
     "-C", workspace.binding.workspacePath,
     "-m", CODEX_MODEL,
+    "-c", 'model_reasoning_effort="medium"',
     "--sandbox", "workspace-write",
     "-c", 'windows.sandbox="unelevated"',
     "-c", 'approval_policy="never"',
@@ -836,11 +838,18 @@ export async function startCodexRun(
     authority: await getStatusAuthorityContext(status.project)
   });
 
-  const child = (testOverrides?.spawn || spawn)(process.execPath, [CODEX_CLI_JS, ...args], {
+  const releaseExecutionLock = await acquireExecutionLock(projectConfig("gacm").proofRoot, `single-${runId}`);
+  let child: ChildProcess;
+  try {
+    child = (testOverrides?.spawn || spawn)(process.execPath, [CODEX_CLI_JS, ...args], {
     cwd: workspace.binding.workspacePath,
     windowsHide: true,
     stdio: ["pipe", "pipe", "pipe"]
-  });
+    });
+  } catch (error) {
+    await releaseExecutionLock();
+    throw error;
+  }
 
   const launchError = await new Promise<Error | null>((resolve) => {
     const onSpawn = () => {
@@ -862,7 +871,8 @@ export async function startCodexRun(
     status.state = "FAILED";
     status.finishedAt = new Date().toISOString();
     status.notification = "SUPPRESSED";
-    await persistStatus(status, testOverrides?.persistRunStatus);
+    try { await persistStatus(status, testOverrides?.persistRunStatus); }
+    finally { await releaseExecutionLock(); }
     throw new Error(`Codex launch failed: ${launchError.message}`);
   }
 
@@ -938,6 +948,7 @@ export async function startCodexRun(
     activeProcesses.delete(runId);
     stdoutStream.end();
     stderrStream.end();
+    await releaseExecutionLock();
   });
 
   // Codex waits on stdin. Do not release the task before SQLite commits.
@@ -964,6 +975,7 @@ export async function startCodexRun(
     activeProcesses.delete(runId);
     stdoutStream.end();
     stderrStream.end();
+    if (stopped) await releaseExecutionLock();
     if (!stopped) {
       throw new Error(`CRITICAL HOLD: status persistence failed and PID ${child.pid} termination is unverified: ${String(error)}`);
     }
@@ -1069,10 +1081,14 @@ export async function startCodexRun(
     } else {
       status.notification = "SUPPRESSED";
     }
-    await persistStatus(status, testOverrides?.persistRunStatus);
-    if (activeRunId === runId) activeRunId = null;
-    activeProcesses.delete(runId);
-    cancelledRuns.delete(runId);
+    try {
+      await persistStatus(status, testOverrides?.persistRunStatus);
+    } finally {
+      if (activeRunId === runId) activeRunId = null;
+      activeProcesses.delete(runId);
+      cancelledRuns.delete(runId);
+      await releaseExecutionLock();
+    }
   });
 
   // The child now has durable status and terminal listeners.
