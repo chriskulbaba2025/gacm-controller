@@ -723,7 +723,7 @@ export async function startCodexRun(
   // before the child process receives either -C or cwd. No caller-provided
   // directory can substitute for the verified binding here.
   await verifyExecutionWorkspaceForLaunch(workspace.binding, workspaceAuthority, gitAtRoot);
-  const releaseExecutionLock = await acquireExecutionLock(cfg.proofRoot, `single-${runId}`);
+  const releaseExecutionLock = await acquireExecutionLock(projectConfig("gacm").proofRoot, `single-${runId}`);
 
   const child = spawn(process.execPath, [CODEX_CLI_JS, ...args], {
     cwd: workspace.binding.workspacePath,
