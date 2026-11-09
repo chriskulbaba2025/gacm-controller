@@ -10,7 +10,7 @@ import {ActionGate,recipeDigest,validateRecipe,type Recipe} from './batch-action
 import {CODEX_CLI_JS,PROJECTS,projectConfig,type ProjectKey} from './config.js';
 import {reconcileExecutionWorkspace,type WorkspaceBinding} from './workspace-bootstrap.js';
 const sha=(s:string|Buffer)=>createHash('sha256').update(s).digest('hex');
-const safeId=/^[A-Za-z0-9._-]{3,120}$/;
+const safeId=/^[A-Za-z0-9._-]{1,120}$/;
 const sameRemote=(a:string,b:string)=>a.trim().replace(/\.git$/i,'').toLowerCase()===b.trim().replace(/\.git$/i,'').toLowerCase();
 function eq(a:unknown,b:unknown){return canonical(a)===canonical(b);}
 async function cmd(exe:string,args:string[],cwd:string,timeoutMs=120000){
