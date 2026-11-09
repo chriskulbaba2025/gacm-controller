@@ -1,5 +1,7 @@
 # PRYSM / GACM Governed MCP v0.1
 
+> **Candidate only (2026-11-08):** [Opt-in preapproved batch adapter](docs/PREAPPROVED_BATCH_OPERATION.md) is in the isolated feature branch. Existing single-run control remains authoritative; installed Windows controller and per-action gate are not yet verified. No batch is approved by this source change.
+
 ## Released PRYSM staging authority — 2026-10-16
 
 - Latest staging application GitHub branch `repair/prysm-evidence-accuracy-20261013`: `c0460142224fd6f9cfd8262dd8816aa6ccd89ac7`. Existing isolated-staging Vercel stable alias and Railway worker are provider-verified on this SHA; production-prysm untouched. User browser acceptance remains pending.
