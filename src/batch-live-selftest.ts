@@ -45,6 +45,7 @@ test('real adapter runs signed 3-tranche local Git batch, failed audit then repa
  "if(!m)process.exit(3);"+
  "fs.mkdirSync(path.join(dir,'src'),{recursive:true});"+
  "fs.writeFileSync(path.join(dir,'src',m[1]+'.txt'),m[1]==='T1'&&m[2]==='1'?'FAIL':'PASS');"+
+ "if(prompt.includes('signed-fixture-002'))fs.writeFileSync(path.join(dir,'.env'),'UNAUTHORIZED=1');"+
  "fs.writeFileSync(final,'RESULT:\\nPASS\\nBLOCKER:\\nNone\\nNEXT ACTION:\\nIndependent audit.');"+
  "console.log('SIMULATED CODEX, NO PROVIDER CALL');");
  process.env.PRYSM_GACM_CODEX_CLI_JS=fake;
@@ -106,4 +107,18 @@ test('real adapter runs signed 3-tranche local Git batch, failed audit then repa
  const worktree=state.accepted[0].workspaceId;
  for(let i=1;i<=3;i++)assert.equal(await readFile(path.join(worktree,'src','T'+i+'.txt'),'utf8'),'PASS');
  assert.equal(await command(source,'git',['rev-parse','HEAD']),startSha);
+ // Negative: same signed contracts, but executor writes an out-of-scope .env file.
+ const negative=structuredClone(plan);
+ negative.batchId='signed-fixture-002';
+ negative.approval.authorityRecord='batch-approval-negative';
+ negative.approval.frozenDigest=frozenDigest(negative as any);
+ const badRecord={...record,batchId:negative.batchId,authorityId:negative.approval.authorityRecord,
+   frozenDigest:negative.approval.frozenDigest};
+ const badSignature=sign(null,Buffer.from(canonical(badRecord)),privateKey).toString('base64');
+ await writeFile(path.join(approvalDir,negative.approval.authorityRecord+'.json'),
+   JSON.stringify({...badRecord,signature:badSignature}));
+ const stopped=await runApprovedBatch(negative as any);
+ assert.equal(stopped.phase,'HOLD');
+ assert.equal(stopped.trancheIndex,0);
+ assert.match(stopped.reason||'',/TRANCHE_PATH_ESCAPED/);
 });
