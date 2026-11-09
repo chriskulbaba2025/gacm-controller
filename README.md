@@ -77,3 +77,9 @@ The protocol test verifies tool discovery, repo status access, path-escape rejec
 ## ChatGPT connection
 
 ChatGPT cannot directly reach a local stdio MCP. Connect it through an approved remote MCP endpoint or OpenAI Secure MCP Tunnel. Do not expose the local server publicly merely to make it reachable.
+
+## C1-preserving preapproved sequential batches (candidate)
+
+The opt-in sequential batch implementation is integrated on `feature/gacm-batches-c1-reconciled-20261108` above the existing C1 status-integrity controller. It does not replace C1 status/SQLite, PRYSM authority, Telegram, or progress guards. See [batch operator contract](docs/PREAPPROVED_BATCH_OPERATION.md).
+
+No existing active controller is replaced; live authenticated Windows installation and a signed production-project batch remain separately unverified. Every tranche requires an individually frozen authorization in a signed batch envelope.
