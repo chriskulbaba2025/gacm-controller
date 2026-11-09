@@ -32,6 +32,23 @@ Independent verifier contract example:
 
 Contracts are only examples; the operator must approve project-specific tests and browser/runtime gates. Invalid or missing contract digest stops. The controller does not infer missing tests or downgrade incomplete proof to PASS.
 
+## Native operator command — one batch, no tranche-by-tranche prompts
+
+After confirming the local **installed** controller's exact source and preserving its active/dirty state, use the existing controller code; do not create or start a second controller. Put the approved plan and independent contracts **outside** the worktree. Never copy private approval keys into Git, Downloads proof, or Codex's workspace.
+
+Set `GACM_BATCH_APPROVAL_DIR`, `GACM_BATCH_APPROVER_PUBLIC_KEY`, `GACM_BATCH_CONTRACT_DIR` and `GACM_BATCH_RECIPE_DIR` in the trusted operator process environment. Only signed human authorization permits execution. Invalid, absent or expired approval is HOLD. In the **verified controller worktree**, run:
+
+```powershell
+npm run batch:run -- "C:\\Path\\To\\approved-batch.json"
+npm run batch:status -- gacm MY-BATCH-ID
+```
+
+The first command stays active through all approved tranches, automatically repairs within frozen limits, and produces one terminal status. For example, a failed audit triggers an authorized retry; it does **not** request a new ChatGPT turn. The CLI returns nonzero for HOLD/FAIL and never self-grants new tranches. Status is written to the existing proof root under `BATCH-<batchId>`.
+
+The optional MCP commands `run_approved_batch` and `batch_status` expose the same engine when the authorized MCP connection is available. Ordinary chat is **not** the unattended execution host. This code does not automatically install or restart the local Windows process.
+
+**Acceptance boundary:** GitHub Actions verifies TypeScript and a signed three-tranche local-Git sandbox with a simulated Codex CLI on both Windows and Linux. A genuine authenticated Codex run and all project-specific browser/provider acceptance remain UNVERIFIED until performed on the exact installed candidate.
+
 ## Required acceptance before any operational reliance
 1. Exact Windows installed-source and dirty-worktree reconciliation, preserving active controller and work.
 2. Machine-checkable **per-action GACM execution recipe authorization** is connected in candidate source but still requires independent installed-controller verification; do not rely on operational execution until accepted.
