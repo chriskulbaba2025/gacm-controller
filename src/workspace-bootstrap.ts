@@ -1,4 +1,5 @@
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { realpathSync } from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 
@@ -45,9 +46,21 @@ export type WorkspaceGit = (cwd: string, args: string[]) => Promise<string>;
 
 const BINDING_SUFFIX = ".prysm-gacm-workspace.json";
 
-function normalizePath(value: string): string {
-  return path.resolve(value).replaceAll("/", "\\").replace(/[\\]+$/g, "").toLowerCase();
+export function canonicalWorkspacePath(value: string): string {
+  const resolved = path.resolve(value);
+  let physical: string;
+  try {
+    // Win32 8.3 aliases (RUNNER~1) and long names must bind to the same physical path.
+    physical = realpathSync.native(resolved);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    // A not-yet-created target is still checked against the physical Git identity
+    // before the executor is launched.
+    physical = resolved;
+  }
+  return physical.replaceAll("/", "\\").replace(/[\\]+$/g, "").toLowerCase();
 }
+const normalizePath = canonicalWorkspacePath;
 
 function normalizeRemote(value: string): string {
   return value.trim().replace(/\.git$/i, "").replace(/\/$/, "").toLowerCase();
