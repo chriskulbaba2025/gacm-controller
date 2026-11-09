@@ -35,6 +35,8 @@ test('real adapter runs signed 3-tranche local Git batch, failed audit then repa
  await command(source,'git',['remote','add','origin',bare]);
  await command(source,'git',['push','-u','origin','approved']);
  const startSha=await command(source,'git',['rev-parse','HEAD']);
+ const gitTop=await command(source,'git',['rev-parse','--show-toplevel']);
+ console.log('GACM_WINDOWS_PATH_DIAGNOSTIC',JSON.stringify({source,gitTop,resolvedSource:path.resolve(source),resolvedGitTop:path.resolve(gitTop)}));
  const fake=path.join(root,'fake-codex.cjs');
  await writeFile(fake,"const fs=require('node:fs'),path=require('node:path');"+
  "const a=process.argv.slice(2);"+
