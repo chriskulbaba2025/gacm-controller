@@ -5,6 +5,7 @@ import {mkdtemp,mkdir,readFile,writeFile} from 'node:fs/promises';
 import os from 'node:os';import path from 'node:path';
 import {spawn} from 'node:child_process';
 import {createHash,generateKeyPairSync,sign} from 'node:crypto';
+import type {Recipe} from './batch-action-gate.js';
 const sha=(v:string)=>createHash('sha256').update(v).digest('hex');
 async function command(cwd:string,exe:string,args:string[]){
  return new Promise<string>((resolve,reject)=>{
@@ -68,7 +69,7 @@ test('real adapter runs signed 3-tranche local Git batch, failed audit then repa
     action_kind:kind,tools:[tool],target_patterns:[bare],
     parameter_constraints:{allowed_keys:keys,required_keys:keys,exact,allowed_values:values||{}},
     judgment_slot_id:null});
-  const recipe={schema:'GACM_EXECUTION_RECIPE_V1',recipe_id:'recipe-'+id,version:'1',
+  const recipe:Recipe={schema:'GACM_EXECUTION_RECIPE_V1',recipe_id:'recipe-'+id,version:'1',
    state:'FROZEN',work_unit_id:id,mutation_policy:'GOVERNED_REFREEZE_REQUIRED',steps:[
     {step_id:'execute',sequence:1,allowed_actions:[mkRule('CODEX_EXECUTE','codex-cli',
       ['tranche','model','effort','attempt'],{tranche:id,model:'gpt-5.6-luna',effort:'medium'},{attempt:[1,2,3]})],
@@ -97,7 +98,7 @@ test('real adapter runs signed 3-tranche local Git batch, failed audit then repa
  const signature=sign(null,Buffer.from(canonical(record)),privateKey).toString('base64');
  await writeFile(path.join(approvalDir,plan.approval.authorityRecord+'.json'),JSON.stringify({...record,signature}));
  const state=await runApprovedBatch(plan as any);
- assert.equal(state.phase,'COMPLETE',state.reason);
+ assert.equal(state.phase,'COMPLETE',state.reason || 'NO_REASON');
  assert.equal(state.executionCount,4);
  assert.deepEqual(state.accepted.map(x=>x.trancheId),['T1','T2','T3']);
  assert.equal(state.attempts.T1,2);
