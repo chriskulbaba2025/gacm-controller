@@ -30,6 +30,7 @@ import {
   type WorkspaceAuthority,
   type WorkspaceBinding
 } from "./workspace-bootstrap.js";
+import { acquireExecutionLock } from "./execution-lock.js";
 
 const execFile = promisify(execFileCb);
 const activeProcesses = new Map<string, ChildProcess>();
@@ -706,6 +707,7 @@ export async function startCodexRun(
     "exec",
     "-C", workspace.binding.workspacePath,
     "-m", CODEX_MODEL,
+    "-c", 'model_reasoning_effort="medium"',
     "--sandbox", "workspace-write",
     "-c", 'windows.sandbox="unelevated"',
     "-c", 'approval_policy="never"',
@@ -721,6 +723,7 @@ export async function startCodexRun(
   // before the child process receives either -C or cwd. No caller-provided
   // directory can substitute for the verified binding here.
   await verifyExecutionWorkspaceForLaunch(workspace.binding, workspaceAuthority, gitAtRoot);
+  const releaseExecutionLock = await acquireExecutionLock(cfg.proofRoot, `single-${runId}`);
 
   const child = spawn(process.execPath, [CODEX_CLI_JS, ...args], {
     cwd: workspace.binding.workspacePath,
@@ -749,6 +752,7 @@ export async function startCodexRun(
     status.finishedAt = new Date().toISOString();
     status.notification = "SUPPRESSED";
     await writeRunStatus(status);
+    await releaseExecutionLock();
     throw new Error(`Codex launch failed: ${launchError.message}`);
   }
 
@@ -780,6 +784,7 @@ export async function startCodexRun(
     activeProcesses.delete(runId);
     stdoutStream.end();
     stderrStream.end();
+    await releaseExecutionLock();
   });
 
   await writeRunStatus(status);
@@ -870,6 +875,7 @@ export async function startCodexRun(
     if (activeRunId === runId) activeRunId = null;
     activeProcesses.delete(runId);
     cancelledRuns.delete(runId);
+    await releaseExecutionLock();
   });
 
   return status;
