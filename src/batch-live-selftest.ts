@@ -31,6 +31,7 @@ test('real adapter runs signed 3-tranche local Git batch, failed audit then repa
   "import fs from 'node:fs';import path from 'node:path';"+
   "const file=path.join(process.cwd(),'src',process.argv[2]+'.txt');"+
   "process.exit(fs.existsSync(file)&&fs.readFileSync(file,'utf8')==='PASS'?0:1);");
+ await writeFile(path.join(source,'package.json'),JSON.stringify({private:true,scripts:{'check-T1':'node checker.mjs T1','check-T2':'node checker.mjs T2','check-T3':'node checker.mjs T3'}}));
  await command(source,'git',['add','.']);await command(source,'git',['commit','-m','base']);
  await command(source,'git',['remote','add','origin',bare]);
  await command(source,'git',['push','-u','origin','approved']);
@@ -65,7 +66,7 @@ test('real adapter runs signed 3-tranche local Git batch, failed audit then repa
  for(let i=1;i<=3;i++){
   const id='T'+i;
   const contract={schema:'GACM_BATCH_VERIFIER_V1',checks:[{
-    id:'check-'+id,executable:'node',args:['checker.mjs',id],timeoutSeconds:15}]};
+    id:'check-'+id,executable:'npm',args:['run','check-'+id],timeoutSeconds:15}]};
   const verificationContractDigest=sha(canonical(contract));
   await writeFile(path.join(checks,id+'.json'),JSON.stringify(contract));
   const mkRule=(kind:string,tool:string,keys:string[],exact:Record<string,string>,values?:Record<string,number[]>)=>({
