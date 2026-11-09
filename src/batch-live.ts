@@ -117,7 +117,7 @@ class LiveAdapters implements BatchAdapters{
     // Never reset/stash it or bootstrap a clean replacement after a restart.
     const workspace=path.resolve(s.lastCandidate.workspaceId);
     const execRoot=path.resolve(cfg.executionRoot);
-    const norm=(v:string)=>path.resolve(v).replaceAll('\\','/').replace(/\\/$/,'').toLowerCase();
+    const norm=(v:string)=>path.resolve(v).replaceAll('\\','/').toLowerCase();
     if(!norm(workspace).startsWith(norm(execRoot)+'/'))throw Error('PERSISTED_WORKTREE_OUTSIDE_EXECUTION_ROOT');
     const persisted=JSON.parse(await readFile(workspaceBindingPath(workspace),'utf8')) as WorkspaceBinding;
     if(persisted.version!==2||persisted.runId!=='batch-'+p.batchId||
