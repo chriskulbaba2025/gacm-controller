@@ -1,6 +1,10 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import * as z from "zod/v4";
+import path from "node:path";
+import {runApprovedBatch,verifyBatchApproval} from "./batch-live.js";
+import {frozenDigest,JsonBatchStateStore,type BatchPlan} from "./batch-coordinator.js";
+import {projectConfig} from "./config.js";
 import {
   cancelCodexRun,
   configuredModel,
@@ -14,6 +18,8 @@ import {
 } from "./core.js";
 
 const ProjectSchema = z.enum(["prysm", "gacm", "sandbox"]);
+const activeBatches = new Set<string>();
+const batchErrors = new Map<string,string>();
 
 function asText(value: unknown) {
   return {
@@ -161,6 +167,42 @@ function createServer(): McpServer {
     async ({ context, event, message }) => {
       try { return asText(await sendManualNotification(context, event, message)); }
       catch (error) { return asError(error); }
+    }
+  );
+
+  server.registerTool(
+    "run_approved_batch",
+    { description:"Launch only an authenticated, signed and frozen batch envelope. Starts a guarded sequential run; no release/push/deploy.",
+      inputSchema:z.object({plan:z.unknown()}) },
+    async ({plan:raw})=>{
+      try {
+        const plan=raw as BatchPlan;
+        if(!plan || !/^[A-Za-z0-9._-]{3,120}$/.test(plan.batchId) || !ProjectSchema.safeParse(plan.project).success)
+          throw Error("INVALID_BATCH_ENVELOPE");
+        const digest=frozenDigest(plan);
+        const approval=await verifyBatchApproval(plan,digest);
+        if(approval.status!=="PASS"||approval.authorityId!==plan.approval.authorityRecord)
+          throw Error("BATCH_HUMAN_APPROVAL_NOT_VERIFIED");
+        if(activeBatches.has(plan.batchId))throw Error("BATCH_ALREADY_RUNNING");
+        activeBatches.add(plan.batchId);batchErrors.delete(plan.batchId);
+        void runApprovedBatch(plan).catch(e=>batchErrors.set(plan.batchId,String(e)))
+          .finally(()=>activeBatches.delete(plan.batchId));
+        return asText({batchId:plan.batchId,state:"START_REQUESTED",approval:"VERIFIED",
+          note:"Poll batch_status for persisted truth; START_REQUESTED is not an acceptance PASS."});
+      }catch(e){return asError(e);}
+    }
+  );
+  server.registerTool(
+    "batch_status",
+    {description:"Read durable batch status; never interpret model output as product acceptance.",
+      inputSchema:z.object({project:ProjectSchema,batchId:z.string().regex(/^[A-Za-z0-9._-]{3,120}$/)})},
+    async ({project,batchId})=>{
+      try{
+        const folder=path.join(projectConfig(project).proofRoot,"BATCH-"+batchId,"state");
+        const stored=await new JsonBatchStateStore(folder).load(batchId);
+        return asText({batchId,active:activeBatches.has(batchId),state:stored??"NOT_FOUND",
+          error:batchErrors.get(batchId)||null});
+      }catch(e){return asError(e);}
     }
   );
 
