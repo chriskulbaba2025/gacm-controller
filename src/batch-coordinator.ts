@@ -14,7 +14,7 @@ export type Candidate = { workspaceId: string; sourceSha: string; changeDigest: 
 export type ExecutionReceipt = { runId: string; candidate: Candidate; model: string; effort: string; status: 'EXECUTED' | 'BLOCKED'; failureReason?: string };
 export type VerificationReceipt = { status: BatchOutcome; issuerRole: string; runId: string; changeDigest: string; contractDigest: string; evidenceRefs: string[]; defectFamily?: string; reason?: string };
 export type FrozenTranche = {
-  id: string; objective: string; verificationContractDigest: string;
+  id: string; objective: string; verificationContractDigest: string; executionRecipeDigest: string;
   allowedPaths: string[]; forbiddenPaths: string[]; maxAttempts: number;
 };
 export type BatchPlan = {
@@ -71,7 +71,7 @@ function assertPlan(plan:BatchPlan):void {
       plan.approval.frozenDigest!==frozenDigest(plan))throw Error('INVALID_FROZEN_APPROVAL_DIGEST');
   const ids=new Set<string>();
   for(const t of plan.tranches){
-    if(!t.id||ids.has(t.id)||!t.objective|| !/^[a-f0-9]{64}$/.test(t.verificationContractDigest))
+    if(!t.id||ids.has(t.id)||!t.objective|| !/^[a-f0-9]{64}$/.test(t.verificationContractDigest)|| !/^[a-f0-9]{64}$/.test(t.executionRecipeDigest))
       throw Error('INVALID_TRANCHE');
     ids.add(t.id);
     if(!Number.isSafeInteger(t.maxAttempts)||t.maxAttempts<1||t.maxAttempts>3)throw Error('INVALID_RETRY_BOUND');
