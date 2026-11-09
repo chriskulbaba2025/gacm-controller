@@ -185,7 +185,7 @@ class LiveAdapters implements BatchAdapters{
 export async function runApprovedBatch(plan:BatchPlan):Promise<BatchState>{
  if(!Object.hasOwn(PROJECTS,plan.project))throw Error('UNKNOWN_PROJECT');
  const root=projectConfig(plan.project as ProjectKey).proofRoot;
- const release=await acquireExecutionLock(root,'batch-'+plan.batchId);
+ const release=await acquireExecutionLock(projectConfig('gacm').proofRoot,'batch-'+plan.batchId);
  try{
   const proof=path.join(root,'BATCH-'+plan.batchId);await mkdir(proof,{recursive:true});
   const planFile=path.join(proof,'frozen-plan.json'),body=canonical(plan)+'\n';
