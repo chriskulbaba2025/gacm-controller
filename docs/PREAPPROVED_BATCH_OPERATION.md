@@ -57,3 +57,11 @@ The optional MCP commands `run_approved_batch` and `batch_status` expose the sam
 5. Enable separately and preserve rollback only after independent exact-candidate acceptance.
 
 No feature-branch CI or coordinator selftest proves live installed Windows behavior. **No production, push, merge or deployment is authorized by a batch envelope.**
+
+## Reconciled installed-controller identity
+
+The observed Windows controller runs branch `c1/status-integrity-20261014` at commit `076db8cc67c36d04804ad9563524ad6e3d825156`. This branch **diverged** from the main-based candidate. Never replace it with `e55f532133d7d83b130fb5240c428bea5dc34429`.
+
+This integration branch is based on the exact C1 commit and retains C1's status-integrity, SQLite persistence, Telegram and progress protections. Only the shared execution lock and model effort, worktree physical path canonicalization, native batch commands and opt-in batch MCP are integrated. Existing running controller remains unchanged until verified Windows activation and restart authorization. No commit, push, merge, deployment or production writes are granted by any future batch envelope.
+
+**Activation gate:** local original C1 HEAD and branch match; clean and no active run; candidate exact Git SHA and CI verify; controller source, Node, dependencies and Codex subscription login verified; changes staged safely; original branch remains intact; no partial install on HOLD. Real model calls only when explicitly authorized and bounded.
