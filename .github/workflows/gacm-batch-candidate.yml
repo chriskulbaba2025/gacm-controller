@@ -24,4 +24,5 @@ jobs:
       - run: npm run typecheck
       - run: npm run batch:selftest
       - run: npm run batch:live:selftest
+      - run: npm run batch:status -- sandbox missing-batch
       - run: npm run result:selftest
