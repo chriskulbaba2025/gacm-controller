@@ -1,7 +1,7 @@
 /** Actual live-adapter sandbox integration with simulated, zero-provider Codex. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,mkdir,readFile,writeFile} from 'node:fs/promises';
+import {mkdtemp,mkdir,readFile,rm,writeFile} from 'node:fs/promises';
 import os from 'node:os';import path from 'node:path';
 import {spawn} from 'node:child_process';
 import {createHash,generateKeyPairSync,sign} from 'node:crypto';
@@ -107,6 +107,24 @@ test('real adapter runs signed 3-tranche local Git batch, failed audit then repa
  const worktree=state.accepted[0].workspaceId;
  for(let i=1;i<=3;i++)assert.equal(await readFile(path.join(worktree,'src','T'+i+'.txt'),'utf8'),'PASS');
  assert.equal(await command(source,'git',['rev-parse','HEAD']),startSha);
+ // Simulate an orderly process exit after T2, with its accepted dirty candidate intact.
+ // A fresh live-adapter instance must resume T3 without recreating its worktree.
+ const checkpoint=structuredClone(state);
+ checkpoint.phase='PENDING';
+ checkpoint.trancheIndex=2;
+ checkpoint.executionCount=3;
+ checkpoint.accepted=state.accepted.slice(0,2);
+ checkpoint.inFlight=null;
+ checkpoint.lastCandidate={workspaceId:worktree,sourceSha:startSha,
+   changeDigest:state.accepted[1].changeDigest,changedPaths:['src/T1.txt','src/T2.txt']};
+ delete checkpoint.attempts.T3;
+ await rm(path.join(worktree,'src','T3.txt'));
+ await writeFile(path.join(proof,'BATCH-'+plan.batchId,'state',plan.batchId+'.json'),
+   canonical(checkpoint)+'\\n');
+ const resumed=await runApprovedBatch(plan as any);
+ assert.equal(resumed.phase,'COMPLETE',resumed.reason||'resume must complete');
+ assert.equal(resumed.executionCount,4,'resumed batch must not replay accepted T1/T2');
+ assert.equal(resumed.accepted[2].workspaceId,worktree,'resumed T3 must use same dirty worktree');
  // Negative: same signed contracts, but executor writes an out-of-scope .env file.
  const negative=structuredClone(plan);
  negative.batchId='signed-fixture-002';
